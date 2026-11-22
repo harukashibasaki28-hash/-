@@ -1,20 +1,32 @@
-# 手帳アプリ 設計書（ドラフト v0.1）
+# 手帳アプリ 設計書（ドラフト v0.2）
 
 > 状態: **確認待ち**。この設計で良いか確認を取ってから実装に入ります。
+> v0.2 の変更: データの本体を Google スプレッドシートに移し、スマホと PC で同期する形に変更。
 
-## 0. 方針
+## 0. 全体像
+
+```
+ ┌──────────── スマホ / PC ────────────┐            ┌────────── Google（自分のアカウント）──────────┐
+ │  手帳アプリ（PWA, GitHub Pages）     │            │  GAS Web アプリ（自分として実行）               │
+ │   ├ 画面                             │  HTTPS     │   ├ sync: 変更の受け取り・差分の返却             │
+ │   ├ 計算（睡眠・繰越・タイムライン） │ ─────────▶ │   ├ calendar: タスク時刻を登録・更新            │
+ │   ├ IndexedDB（控え＋未送信の変更）  │ ◀───────── │   └ 合言葉（キー）で本人確認                    │
+ │   └ 同期エンジン                     │            │  スプレッドシート「手帳DB」（データの本体）      │
+ └──────────────────────────────────────┘            │  時間トリガー: 21:50 翌日To Do / Gmail / 23:00  │
+                                                     │  Googleカレンダー・Gmail                        │
+                                                     └─────────────────────────────────────────────────┘
+```
 
 | 項目 | 決定 |
 |---|---|
-| 形態 | PWA（スマホのホーム画面に追加／PCブラウザ） |
-| 技術 | **ビルド不要の素の JavaScript（ES Modules）+ HTML + CSS**。npm パッケージは使わない（GitHub Pages にそのまま置ける・壊れにくい） |
-| 保存 | IndexedDB（端末内）。JSON で書き出し／読み込み |
-| グラフ | 自前の SVG 描画（ライブラリなし） |
-| テスト | Node.js 標準のテストランナー（`node --test`）。追加インストール不要 |
-| 外部連携 | Google Apps Script（GAS）のみ。有料 API・独自サーバーなし |
-| 公開 | GitHub Pages（GitHub Actions で自動デプロイ＋テスト） |
+| 形態 | PWA（ホーム画面に追加）＋PC ブラウザ。GitHub Pages で無料公開 |
+| 技術 | ビルド不要の素の JavaScript（ES Modules）＋HTML＋CSS。外部パッケージなし |
+| データ本体 | Google スプレッドシート（GAS 経由で読み書き） |
+| 端末内 | IndexedDB に控え＋未送信の変更。オフラインでも記録でき、つながったら自動で反映 |
+| テスト | Node.js 標準の `node --test`（インストール不要） |
+| 有料サービス | なし |
 
-計算ロジック（睡眠・繰越・完了率・タイムライン・分析）は **画面から切り離した純粋関数** にして、Node でもブラウザでも同じコードをテストできるようにします。
+計算ロジックは画面から切り離した関数にして、Node でテストします。
 
 ---
 
@@ -22,243 +34,223 @@
 
 ```
 /
-├─ index.html                 アプリ本体（1ページ。画面はタブ切り替え）
-├─ manifest.webmanifest       PWA 設定（名前・アイコン・standalone 表示）
-├─ sw.js                      Service Worker（オフライン起動用キャッシュ）
-├─ icons/                     ホーム画面アイコン
+├─ index.html                 アプリ本体（1ページ、タブで画面切り替え）
+├─ manifest.webmanifest       PWA 設定
+├─ sw.js                      Service Worker（オフラインでも起動）
+├─ icons/
 ├─ config/
-│   ├─ defaults.json          初期設定（起床/就寝目標・固定予定・毎日のタスク・食事枠など）
-│   └─ rules.json             改善策ルール（後から追加・編集できる）
+│   ├─ defaults.json          初期設定（目標時刻・固定予定・毎日のタスク・食事枠など）
+│   └─ rules.json             改善策ルールの初期値（アプリ内で追加・編集可）
 ├─ src/
-│   ├─ app.js                 起動処理（DB を開く→繰越→画面表示→バックアップ）
-│   ├─ db.js                  IndexedDB の薄いラッパー
+│   ├─ app.js                 起動（控えを読む→同期→繰越→画面表示）
+│   ├─ store/
+│   │   ├─ localDb.js         IndexedDB（控え・未送信キュー）
+│   │   ├─ repo.js            データ操作の窓口（画面はここだけを使う）
+│   │   └─ sync.js            同期エンジン（送信・受信・競合解決・再試行）
 │   ├─ model/
-│   │   ├─ schema.js          データ型・初期値・正規化（欠けた項目を補う）
-│   │   ├─ importExport.js    JSON 読み込み・書き出し・形式チェック ★最初に作る
-│   │   └─ dates.js           日付計算（Asia/Tokyo 固定、「論理日付」）
+│   │   ├─ schema.js          データ型・既定値・正規化
+│   │   ├─ importExport.js    JSON 読み込み・書き出し ★最初に作る
+│   │   └─ dates.js           日付計算（Asia/Tokyo 固定、論理日付）
 │   ├─ core/
-│   │   ├─ sleep.js           寝る/起きた/昼寝の記録と睡眠時間計算
-│   │   ├─ tasks.js           タスク追加・編集・完了、テンプレート展開
-│   │   ├─ timer.js           開始/停止・実績時間・止め忘れ検知
-│   │   ├─ carryover.js       繰越と closed 処理
+│   │   ├─ sleep.js           寝る/起きた/昼寝、睡眠時間
+│   │   ├─ tasks.js           タスク操作、毎日のタスクの展開
+│   │   ├─ timer.js           計測、止め忘れ検知
+│   │   ├─ carryover.js       繰越・closed
+│   │   ├─ study.js           4002 / FP2級 の進行・章末問題・遅れ警告
 │   │   ├─ scheduler.js       タイムライン自動作成
-│   │   ├─ estimates.js       実績倍率の計算と見積もり補正
-│   │   ├─ stats.js           完了率・【min】達成数・平均ずれ・週集計・標準偏差
-│   │   └─ study.js           4002 / FP2級 の進捗と次回分の自動生成・遅れ警告
+│   │   ├─ estimates.js       実績倍率・見積もり補正
+│   │   └─ stats.js           完了率・【min】達成・平均ずれ・週集計・標準偏差
 │   ├─ analysis/
-│   │   ├─ index.js           分析器の登録口（差し替え可能なインターフェース）
-│   │   ├─ metrics.js         ルールが参照する指標を計算
-│   │   └─ ruleEngine.js      rules.json を評価して「課題・改善策」を出す
+│   │   ├─ index.js           分析器の登録口（差し替え可能）
+│   │   ├─ metrics.js         ルールが参照する指標
+│   │   └─ ruleEngine.js      ルール評価 → 課題・改善策
 │   ├─ notify/
-│   │   ├─ notifier.js        アプリを開いている間の通知（Notification API）
-│   │   ├─ ics.js             アラーム付き .ics ファイル生成
-│   │   └─ shortcuts.js       iPhone ショートカット呼び出し URL 生成
-│   ├─ sync/
-│   │   ├─ gasClient.js       GAS Web アプリとの通信
-│   │   └─ backup.js          Google ドライブへの日次バックアップ
-│   └─ ui/
-│       ├─ today.js           今日（睡眠ボタン・タスク・タイマー・確認候補）
-│       ├─ timeline.js        タイムライン・後ろ倒し候補
-│       ├─ review.js          今日の進捗（夜）
-│       ├─ weekly.js          週の振り返り（グラフ）
-│       ├─ hourensou.js       報連相リスト
-│       ├─ log.js             日次ログ表
-│       ├─ study.js           学習の進み具合
-│       ├─ settings.js        設定・ルール編集・インポート/エクスポート・GAS 接続
-│       ├─ chart.js           SVG 折れ線/棒グラフ
-│       └─ styles.css
-├─ gas/                       Google Apps Script（コピーして貼り付ける用）
+│   │   ├─ notifier.js        アプリを開いている間の通知
+│   │   ├─ ics.js             アラーム付き .ics 生成
+│   │   └─ shortcuts.js       iPhone ショートカット起動 URL
+│   └─ ui/                    today / timeline / review / weekly / hourensou /
+│                             log / study / inbox / settings / chart.js / styles.css
+├─ gas/                       Apps Script（スプレッドシートに貼り付ける）
 │   ├─ appsscript.json        timeZone: "Asia/Tokyo"
-│   ├─ Main.gs                Web アプリ入口（doGet / doPost）、トークン認証
-│   ├─ NextDay.gs             21:50 実行：スプレッドシート＋カレンダー → 翌日 To Do
-│   ├─ Calendar.gs            タスク時刻をカレンダーに登録・更新
+│   ├─ Main.gs                doGet / doPost、本人確認、振り分け
+│   ├─ Db.gs                  シートの読み書き（行⇔データ変換、版番号）
+│   ├─ Sync.gs                同期処理（排他ロック付き）
+│   ├─ NextDay.gs             21:50 翌日 To Do 作成
+│   ├─ Calendar.gs            カレンダー登録・更新、23:30 寝る準備の予定
 │   ├─ Gmail.gs               確認候補の抽出・日付検出・「手帳済」ラベル
-│   ├─ Backup.gs              JSON をドライブに保存（世代管理）
-│   └─ Setup.gs               トリガー作成・ラベル作成を一発で行う関数
-├─ tests/
-│   ├─ import.test.js
-│   ├─ sleep.test.js
-│   ├─ carryover.test.js
-│   ├─ stats.test.js          完了率・平均ずれ・標準偏差
-│   ├─ scheduler.test.js
-│   ├─ study.test.js
-│   └─ rules.test.js
+│   ├─ Night.gs               23:00 未完了【min】の確認
+│   └─ Setup.gs               初回セットアップ（シート作成・キー発行・トリガー登録）
+├─ tests/                     import / sleep / carryover / stats / scheduler / study / rules / sync
 ├─ docs/
-│   ├─ DESIGN.md              この文書
-│   ├─ SETUP_GAS.md           GAS 設定手順（初心者向け・画面ごと）
-│   ├─ SETUP_PAGES.md         GitHub Pages 公開とホーム画面追加の手順
-│   └─ SETUP_ALARM.md         iPhone ショートカット / .ics でアラームを鳴らす手順
-├─ package.json               `npm test` で node --test を呼ぶだけ（依存なし）
-└─ .github/workflows/
-    ├─ test.yml               push ごとに自動テスト
-    └─ pages.yml              GitHub Pages へデプロイ
+│   ├─ DESIGN.md
+│   ├─ SETUP_GAS.md           スプレッドシートと GAS の設定（初心者向け・画面ごと）
+│   ├─ SETUP_PAGES.md         GitHub Pages 公開とホーム画面追加
+│   └─ SETUP_ALARM.md         iPhone ショートカット / .ics でアラーム
+├─ package.json               `npm test` だけ（依存なし）
+└─ .github/workflows/         test.yml（自動テスト）, pages.yml（公開）
 ```
 
 ---
 
 ## 2. データ構造
 
-今の形をそのまま引き継ぎ、**足りない項目は読み込み時に既定値で補う**（壊さない）。
-
-### 2.1 書き出し JSON（＝バックアップ形式）
+### 2.1 アプリ内・JSON の形（今の形を引き継ぐ）
 
 ```jsonc
 {
-  "format": "techo",
-  "version": 1,
-  "exportedAt": "2026-11-22T21:50:00+09:00",
   "days": {
     "2026-11-22": {
-      "tasks": [{
-        "id": "t_xxx", "title": "FP2級 1section【min】", "done": false, "doneAt": null,
-        "priority": 2, "est": 45, "actualMin": 0,
-        "sessions": [{ "start": "...", "end": "...", "min": 30 }],
-        "runningSince": null, "deadline": null, "start": "14:00",
-        "carryCount": 0, "carriedFrom": null,
-        // ↓追加（任意・無くても動く）
-        "tag": "min",            // "min" | "A" | null  （タイトルの【min】【A】から自動判定）
-        "templateId": "fp2",     // 毎日のタスク由来なら元テンプレート
-        "weight": "heavy",       // heavy | light（未指定なら est で自動判定）
-        "calendarEventId": null  // Google カレンダー連携用
-      }],
-      "sleep": { "bed": "...", "wake": "...", "min": 420 },
-      "naps": [{ "start": "...", "end": "...", "min": 20 }],
-      "note": "", "closed": false,
-      "planned": 5, "done": 3, "rate": 0.6, "review": "..."
+      "tasks": [{ "id", "title", "done", "doneAt", "priority", "est", "actualMin",
+                  "sessions": [{ "start", "end", "min" }],
+                  "runningSince", "deadline", "start", "carryCount", "carriedFrom" }],
+      "sleep": { "bed", "wake", "min" },
+      "naps": [{ "start", "end", "min" }],
+      "note", "closed", "planned", "done", "rate", "review"
     }
   },
-  "hourensou": {
-    "h_xxx": { "to": "...", "what": "...", "kind": "報告", "due": "2026-11-25", "done": false }
-  },
-  "settings": { ... },       // 3章
-  "fixedEvents": [ ... ],
-  "templates": [ ... ],
-  "study": { ... },          // 6章
-  "rules": [ ... ],          // 5章（書き出しに含める＝端末移行しても残る）
-  "inbox": [ ... ]           // Gmail 確認候補
+  "hourensou": { "<id>": { "to", "what", "kind", "due", "done" } },
+  "settings": {...}, "fixedEvents": [...], "templates": [...],
+  "study": {...}, "rules": [...], "inbox": [...]
 }
 ```
+- タスクに任意で追加する項目（無くても動く）: `tag`（min/A、タイトルから自動判定）, `templateId`, `source`（plan/calendar/gmail）, `calendarEventId`, `updatedAt`。
+- **読み込みで受け付ける形**: ①上の形 ②今のチャットのキー形式 `{"days/2026-11-22": {...}, "hourensou/abc": {...}}` ③一部分だけ。読み込み前に件数をプレビューし、「マージ」か「置き換え」を選ぶ。読み込んだデータは同期でスプレッドシートにも入る。
+- 日時は `+09:00` 付き ISO 文字列、予定開始などは `"HH:MM"`。
+- 夜の睡眠は**起床した日**、昼寝は**開始した日**。「寝る」の時点では「睡眠中」として一時保存し、「起きた」で起床日に確定。
 
-**読み込みで受け付ける形**（どれでも可）
-1. 上の形式そのもの
-2. Claude チャットで使っているキー形式 `{"days/2026-11-22": {...}, "hourensou/abc": {...}}`
-3. `days` / `hourensou` だけの部分 JSON
+### 2.2 スプレッドシート「手帳DB」のシート
 
-読み込み時は「上書き」か「マージ（日付ごとに新しい方・タスクは id で統合）」を選べる。事前にプレビュー（何日分・何件）を表示。
+人が見ても分かるよう、1 件 1 行で保存します（JSON 列は配列などの細かい部分だけ）。
 
-### 2.2 時刻の表し方
-- 日時は ISO 8601 文字列 `+09:00` 付き（例 `2026-11-22T23:41:00+09:00`）。
-- `start`（予定開始）・固定予定は `"HH:MM"`。
-- タイムゾーンは常に Asia/Tokyo として計算（端末の設定に依存しない）。
-
-### 2.3 記録先の日付
-- 夜の睡眠：**起床した日** の `sleep`。`bed` は前日夜の時刻でも起床日に記録。
-- 昼寝：**開始した日** の `naps`。
-- 「寝る」を押した時点では `meta.pendingSleep = {bed}` に一時保存し、「起きた」で起床日に確定。
-
-### 2.4 IndexedDB のストア
-| ストア | キー | 内容 |
+| シート | 1行 = | 主な列 |
 |---|---|---|
-| `days` | `YYYY-MM-DD` | 1日分 |
-| `hourensou` | id | 報連相 |
-| `kv` | 名前 | settings / fixedEvents / templates / study / rules / inbox / meta（最終起動日・実行中の睡眠・最終バックアップ等） |
+| `days` | 1日 | date, bed, wake, sleepMin, naps(JSON), note, closed, planned, done, rate, review |
+| `tasks` | 1タスク | id, date, title, done, doneAt, priority, est, actualMin, sessions(JSON), runningSince, deadline, start, carryCount, carriedFrom, tag, templateId, source, calendarEventId |
+| `hourensou` | 1件 | id, to, what, kind, due, done |
+| `config` | 1設定 | key（settings / fixedEvents / templates / study / rules / state）, value(JSON) |
+| `inbox` | 1メール | id, from, subject, date, snippet, dateCandidates(JSON), status（new/task/ignored）, link |
+| `学習計画` | 1行 | date, subject, content, est（形式は要確認。別のスプレッドシートでも可） |
+
+全シート共通の管理列: `rev`（版番号）, `updatedAt`, `deviceId`, `deleted`（削除は印だけ付ける）。
+
+### 2.3 同期のしくみ（sync.js ⇔ Sync.gs）
+
+1. アプリでの変更はすべて、まず IndexedDB に保存し、「未送信キュー」に積む（オフラインでもここまでは動く）。
+2. 送るタイミング: 変更の2秒後、アプリを開いたとき、オンラインに戻ったとき、開いている間は5分ごと。
+3. 送信 `POST {action:"sync", since:<前回受け取った版>, changes:[...]}`。
+   GAS は排他ロック（LockService）を取り、各行に新しい `rev` を付けて保存し、`since` 以降の変更を返す。
+4. **競合**: 1件（1日・1タスク・1報連相・1設定）ごとに `updatedAt` が新しい方を採用する。スマホと PC で同じタスクを同時に編集した場合だけ後勝ちになる。
+5. **二重作成を防ぐ ID**: 繰越・毎日のタスク・翌日 To Do は**決まった規則で ID を作る**（例: 繰越 `元ID>2026-11-23`、毎日のタスク `tpl:fp2:2026-11-23`）。スマホと PC の両方で繰越が走っても同じ行になり、重複しない。
+6. 画面に「未送信 N 件／最終同期 21:05」を表示。失敗したら自動で再試行。
+
+### 2.4 本人確認（自分以外が読み書きできないようにする）
+
+- スプレッドシート自体は共有しない（自分だけ）。GAS は「自分として実行」。
+- GAS Web アプリは、ブラウザアプリから呼ぶために公開範囲を「全員」にする必要がある（「自分のみ」にすると、Safari などで Google のログイン状態を渡せずアプリから呼べない）。
+- そこで **合言葉（キー）で本人確認** する:
+  - 初回セットアップで GAS が 256 ビットの乱数キーを発行し、スクリプトのプロパティ（自分しか見られない場所）に保存。
+  - アプリの設定画面に URL とキーを貼る（PC で表示した QR コードをスマホで読む方法も用意）。キーは端末内にだけ保存し、GitHub には置かない。
+  - キーが違うリクエストには何も返さない。失敗が続いたら一時的に拒否。
+  - 端末をなくしたときは、GAS でキーを作り直せば古いキーは使えなくなる。
+- より強くしたい場合のオプション: Google ログイン（無料の OAuth クライアント ID）で「自分のメールアドレスか」を GAS で確認する。ただし iPhone のホーム画面アプリではログイン画面の挙動が不安定なため、初期は合言葉方式を提案します。
 
 ---
 
-## 3. 設定（config/defaults.json の初期値）
+## 3. 設定（config/defaults.json）
 
 ```jsonc
 {
   "settings": {
-    "wakeTarget": { "from": "05:00", "to": "07:00" },
-    "bedTarget": "24:00",
-    "availableMin": 600,              // 1日に使える時間（要確認）
-    "focusPeriod": "afternoon",       // 集中しやすい時間帯
-    "dayStartsAt": "04:00",           // 論理日付の切り替え時刻（要確認）
-    "bufferRatio": 0.25,              // 空き時間の 25% はバッファ
-    "defaultEstFactor": 1.3,
+    "wakeTarget": { "from": "05:00", "to": "07:00" }, "bedTarget": "24:00",
+    "availableMin": 600,            // 要確認
+    "focusPeriod": "afternoon",
+    "dayStartsAt": "04:00",         // 日付の切り替え時刻（要確認）
+    "bufferRatio": 0.25, "defaultEstFactor": 1.3,
     "sleepAlarm": "06:00", "napAlarmMin": 20,
-    "bedPrepTime": "23:30", "minCheckTime": "23:00",
-    "timerWarnMin": 120,
-    "meals": [ { "label": "昼食", "start": "12:00", "min": 60 }, { "label": "夕食", "start": "19:00", "min": 60 } ],
-    "breakEveryMin": 90, "breakMin": 10,
-    "travelMinAroundFixed": 30,
-    "gas": { "url": "", "token": "" } // 端末内のみ。リポジトリには入れない
+    "minCheckTime": "23:00", "bedPrepTime": "23:30", "timerWarnMin": 120,
+    "meals": [ { "label": "昼食", "start": "12:00", "min": 60 },
+               { "label": "夕食", "start": "19:00", "min": 60 } ],
+    "breakEveryMin": 90, "breakMin": 10, "travelMinAroundFixed": 30
   },
   "fixedEvents": [
     { "weekday": 1, "start": "10:30", "end": "12:00", "title": "英語スピーキング" },
     { "weekday": 2, "start": "14:45", "end": "16:15", "title": "ゼミ" }
   ],
   "templates": [
-    { "id": "nikkei", "title": "日経4ニュース【A】", "est": 20, "priority": 2 },
-    { "id": "eng",    "title": "英語学習1講座【min】", "est": 30, "priority": 1 },
-    { "id": "s4002",  "title": "4002 半stage【min】", "est": 30, "priority": 1, "study": "4002" },
-    { "id": "gpt",    "title": "ChatGPT英会話【A】", "est": 20, "priority": 3 },
-    { "id": "fp2",    "title": "FP2級 1section【min】", "est": 45, "priority": 1, "study": "fp2" }
-  ]
+    { "id": "nikkei", "title": "日経4ニュース【A】",     "est": 20, "priority": 2 },
+    { "id": "eng",    "title": "英語学習1講座【min】",   "est": 30, "priority": 1 },
+    { "id": "s4002",  "title": "4002 半stage【min】",    "est": 30, "priority": 1, "study": "4002" },
+    { "id": "gpt",    "title": "ChatGPT英会話【A】",     "est": 20, "priority": 3 },
+    { "id": "fp2",    "title": "FP2級 1section【min】",  "est": 45, "priority": 1, "study": "fp2" }
+  ],
+  "study": {
+    "examDate": "2027-01-24", "reviewDaysBeforeExam": 0,
+    "4002": { "totalStages": null, "current": { "stage": 1, "half": "前半" } },
+    "fp2":  { "chapters": [], "current": { "chapter": 1, "sec": 1 }, "chapterTestMin": 75 }
+  }
 }
 ```
-すべて「設定」画面から変更可能。
+すべて設定画面から変更でき、変更は同期でスプレッドシートにも反映されます。
 
 ---
 
 ## 4. 機能ごとの設計
 
 ### 4.1 睡眠ボタン
-- 4 つの大きなボタン。状態に応じて押せるものだけ有効（寝ている間は「起きた」だけ等）。
-- `min` は 終了−開始 を分で計算（日付またぎ対応）。
-- 押し間違い用に「時刻を修正」ボタン。
-- **止め忘れ確認**：「寝る」「昼寝する」を押したとき動いているタイマーがあれば「止めますか？（今止める／寝た時刻で止める／そのまま）」。
+- 「寝る」「起きた」「昼寝する」「昼寝から起きた」。状態に応じて押せるボタンだけ有効。
+- 睡眠時間は 終了−開始（日付またぎ対応）。時刻の修正も可。
+- 「寝る」「昼寝する」を押したとき、計測中のタスクがあれば「止めますか？（今止める／そのまま）」と確認。
 
-### 4.2 通知とアラーム（重要：PWA の制約）
-PWA は **アプリを閉じていると、指定時刻に通知を確実に鳴らせません**（iPhone はサーバーからのプッシュが必要、Android も時刻指定通知は未対応）。そこで三段構え：
+### 4.2 通知とアラーム（PWA の制約への対応）
+PWA は**アプリを閉じている間、指定時刻に確実に通知を鳴らせない**（iPhone は有料のプッシュサーバーが必要、Android も時刻指定通知は未対応）。そのため次のように分けます。
 
 | 用途 | 方法 |
 |---|---|
-| アプリを開いている間 | ブラウザ通知＋画面表示（タイマー2時間超など） |
-| 起床 6:00 / 昼寝 20分 | **iPhone ショートカット**：ボタンを押すと `shortcuts://run-shortcut?name=手帳アラーム&input=06:00` を開き、端末のアラームを作成。設定手順は SETUP_ALARM.md |
-| 同上（Android/PC） | アラーム付き **.ics** をダウンロード→カレンダーに追加 |
-| 23:30 寝る準備・23:00 【min】確認 | GAS で **Google カレンダーに毎日の予定（通知付き）** を登録 → スマホのカレンダー通知で確実に鳴る。アプリを開けば 23:00 以降は未完了【min】一覧を最上部に表示 |
+| 起床 6:00 / 昼寝 20 分後 | **iPhone**: ボタンを押すとショートカット「手帳アラーム」が起動し、端末の時計アプリにアラームを作成。**Android/PC**: アラーム付き .ics を開いてカレンダーに追加 |
+| 23:00 【min】未完了の一覧 | GAS が 23:00 にスプレッドシートを確認し、未完了があれば**一覧をメールで自分に送る**（Gmail アプリの通知で届く）。アプリを開けば画面上部にも表示 |
+| 23:30 寝る準備 | GAS が Google カレンダーに毎日の「寝る準備」予定（通知付き）を登録 → カレンダーの通知で確実に鳴る |
+| タイマー 2 時間超 | アプリを開いている間は通知＋確認。閉じていた場合は次に開いたとき確認（「2時間で止める／実際の時刻で止める／続ける」） |
 
-### 4.3 タスクとタイマー
+### 4.3 タスクと計測
 - 追加・編集・削除・完了。【min】【A】はタイトルから自動判定。
-- 開始で `runningSince` をセット、停止で `sessions` に追加し `actualMin` を合計。同時に動くタイマーは 1 つ（別を開始すると前のは自動停止）。
-- アプリ再起動しても `runningSince` から経過を復元。2時間超で確認ダイアログ。
+- 開始で `runningSince`、停止で `sessions` に追加して `actualMin` を合計。同時に動くのは 1 つだけ。
+- `runningSince` は同期されるので、スマホで開始して PC で止めることもできる。
 
 ### 4.4 繰越（carryover.js）
-アプリを開いたとき／画面に戻ったとき（日付が変わっていれば）：
+アプリを開いたとき（論理日付が変わっていれば）:
 1. 今日より前で `closed=false` の日を全部探す。
-2. 未完了タスクを今日へ**コピー**（新 id、`carryCount+1`、`carriedFrom=元の日付`、タイマー・sessions はリセット）。
-3. 同じタスクの二重コピーを防ぐ（元タスクに `carriedTo` を記録）。
-4. その日の `planned / done / rate` を確定して `closed=true`。
-5. 今日のテンプレートタスク（毎日の5つ）を追加。テンプレート由来で繰越されたものとは重複させない。
-- 「日付が変わった」の判定は **論理日付**（既定 4:00 切り替え）。0時過ぎに作業中でも前日扱い。
+2. 未完了タスクを今日へコピー（ID は規則で作成、`carryCount+1`、`carriedFrom=元の日付`、計測はリセット）。
+3. その日の `planned / done / rate` を確定して `closed=true`。
+4. 今日の毎日のタスクを追加（4002/FP は学習の進み具合から具体的な名前に）。繰越分と重複させない。
+- 日付の切り替えは**論理日付**（既定 4:00）。0時過ぎの作業は前日扱い。
+- 21:50 の GAS が先に翌日のタスクを作っていても、ID が同じなので重複しない。
 
-### 4.5 タイムライン自動作成（scheduler.js）
-入力：今日のタスク・固定予定・食事・起床時刻・就寝目標・設定。
-1. 起床（または現在時刻）〜就寝目標の間から、固定予定＋前後の移動枠・食事枠を除いた**空き区間**を作る。
-2. 空き時間合計 × 0.75 = 配置できる上限。残り 25% はバッファ。
-3. 配置する長さ = est × 倍率（そのタスク（テンプレート）の過去実績倍率 → 無ければ全体の実績倍率 → 無ければ 1.3）。
-4. 並び順：締切が近い → 優先度高 → 繰越回数多。
-5. 重いタスク（配置長 ≥ 45 分 or weight=heavy）は午後の区間を優先、軽いもの（≤ 20分）は短い隙間を優先。
-6. 90 分ごとに 10 分休憩を挿入。
-7. 入らなかったものは「**後ろ倒し候補**」として理由付きで一覧表示（明日へ／週末へ／削るボタン）。
-8. 結果はタスクの `start` に反映。手動でドラッグ・時刻変更も可。「カレンダーに送る」で GAS 経由で Google カレンダーへ。
+### 4.5 学習の自動進行（study.js）
+- 4002: 「4002 stage5 前半【min】」完了 → 翌日は「stage5 後半」→ その次は「stage6 前半」。
+- FP2級: 「FP2級 第2章 Sec3【min】」完了 → 翌日は Sec4。章の全 Sec が終わった翌日は「FP2級 第2章 章末問題【min】（見積75分）」、その次から次の章。
+- 1 日に複数こなしたら、その分進む。進み具合は `config` シートの `study` に保存（GAS もこれを見て翌日分を作る）。
+- **遅れ警告**: 残りの単位数 ÷ 試験日までに使える日数 ＞ 1（1日1単位のペース）なら「遅れ: あと N 単位、1日あたり X 必要」と今日画面と学習画面に表示。
 
-### 4.6 今日の進捗（夜に表示）
-- 睡眠時間、昼寝回数と合計、完了率、【min】達成数 / 総数、見積と実績の倍率、予定開始との平均ずれ（実際の初回開始 − `start` の平均）。
-- 課題と改善策は 5 章のルールエンジンで生成。
-- 「ひとこと振り返り」を `review` に保存。
+### 4.6 タイムライン自動作成（scheduler.js）
+1. 起床（または今）〜就寝目標から、固定予定＋前後の移動枠・食事枠を除いた**空き区間**を作る。
+2. 空き時間 × 75% までしか置かない（残りはバッファ）。
+3. 置く長さ = 見積 × 倍率（そのタスクの過去の実績倍率 → 全体の実績倍率 → 1.3 の順で採用）。
+4. 締切が近い → 優先度が高い → 繰越が多い の順。
+5. 重いタスク（45 分以上）は午後の区間を優先、軽いもの（20 分以下）は短い隙間を優先。
+6. 90 分ごとに 10 分の休憩を入れる。
+7. 入らなかったものは「**後ろ倒し候補**」として理由付きで一覧（明日へ／週末へ／削る）。
+8. 決めた時刻は `start` に入り、「カレンダーに登録」で Google カレンダーへ（同じ予定は更新、Asia/Tokyo）。
 
-### 4.7 週の振り返り（日曜に表示・いつでも開ける）
-- 平均睡眠時間、就寝時刻の標準偏差（24時またぎは「18時起点の分」に変換して計算）、完了率の推移（7日の折れ線）、睡眠時間（棒）。
-- 「翌週に変えること」はルールの重要度が最も高いもの1つを表示。
+### 4.7 今日の進捗（夜）
+睡眠時間、昼寝の回数と合計、完了率、【min】達成数、見積と実績の倍率、予定開始との平均ずれ ＋ ルールによる課題と改善策。振り返りの一言を `review` に保存。
 
-### 4.8 報連相リスト
-- 期限が近い順（期限切れは赤で最上部）、完了は下に折りたたみ。今日画面にも期限3日以内を表示。
+### 4.8 週の振り返り（日曜。いつでも開ける）
+平均睡眠時間、就寝時刻の標準偏差（24時またぎに対応）、完了率の推移グラフ（7日）、翌週に変えること 1 つ（重要度が最も高い改善策）。
 
-### 4.9 日次ログ表
-- 日付・就寝・起床・睡眠・昼寝・予定数・完了数・メモ。期間切り替え、CSV 書き出し。
+### 4.9 報連相・日次ログ・確認候補
+- 報連相: 期限が近い順（期限切れは赤で最上部）。今日の画面にも期限 3 日以内を表示。
+- 日次ログ表: 日付・就寝・起床・睡眠・昼寝・予定数・完了数・メモ。CSV 書き出しも可。
+- 確認候補（Gmail）: 件名・差出人・本文の抜粋・締切候補の日付。「タスクにする（締切を選ぶ）」「報連相にする」「無視」を選ぶ。
 
 ---
 
@@ -266,13 +258,13 @@ PWA は **アプリを閉じていると、指定時刻に通知を確実に鳴�
 
 ```jsonc
 [
-  { "id": "nap_long", "scope": "day", "severity": 2,
+  { "id": "nap_long", "severity": 2,
     "when": { "metric": "napTotalMin", "op": ">", "value": 60 },
-    "issue": "昼寝が{napTotalMin}分", "advice": "昼寝は20分アラームで1回まで" },
-  { "id": "late_bed", "scope": "day", "severity": 3,
+    "issue": "昼寝が合計{napTotalMin}分", "advice": "昼寝は20分アラームで1回まで" },
+  { "id": "late_bed", "severity": 3,
     "when": { "metric": "bedLateMin", "op": ">=", "value": 60, "streak": 2 },
     "issue": "就寝が目標より60分以上遅い日が{streak}日続いている", "advice": "23:30に寝る準備" },
-  { "id": "late_wake_morning", "scope": "day", "severity": 2,
+  { "id": "late_wake", "severity": 2,
     "when": { "all": [ { "metric": "wakeHour", "op": ">=", "value": 7 },
                        { "metric": "morningTasksUntouched", "op": ">", "value": 0 } ] },
     "issue": "起床が7時以降で朝のタスクが未着手", "advice": "朝タスクを午後へ移す" },
@@ -282,98 +274,60 @@ PWA は **アプリを閉じていると、指定時刻に通知を確実に鳴�
   { "id": "ratio_over", "scope": "task", "severity": 1,
     "when": { "metric": "actualRatio", "op": ">", "value": 1.3 },
     "issue": "「{title}」の実績が見積の{actualRatio}倍", "advice": "次回の見積もりを自動で増やします",
-    "action": { "type": "raiseEstimate", "useRatio": true } }
+    "action": { "type": "raiseEstimate" } }
 ]
 ```
-- `when` は `metric / op / value`、`all` / `any`、`streak`（連続日数）を組み合わせ。
-- 使える指標名の一覧を設定画面に表示。新しい指標を足すときは `metrics.js` に1関数追加するだけ。
-- `action` は今のところ `raiseEstimate`（テンプレートの est を更新）のみ。
+- 条件は `metric / op / value`、`all`/`any`、`streak`（連続日数）の組み合わせ。
+- 設定画面で追加・編集でき、使える指標の一覧も表示。新しい指標は `metrics.js` に関数を 1 つ足すだけ。
+- ルールは `config` シートに保存されるので、スマホと PC で共通。
 
-### 分析部分の差し替え口（analysis/index.js）
+**分析の差し替え口（analysis/index.js）**
 ```js
-// 分析器はすべてこの形。async にしておくので将来 AI（外部 API）も入れられる
-{ id: "rules", analyze: async (ctx) => ({ metrics, findings: [{severity, issue, advice, action?}] }) }
+// 分析器はすべてこの形。async なので将来 AI 分析も同じ形で追加できる
+{ id: "rules", analyze: async (ctx) => ({ metrics, findings: [{ severity, issue, advice, action }] }) }
 ```
-`ctx` = { 対象日, 直近の days, settings, rules }。登録された分析器を順に呼び、結果をまとめて表示。将来は `{ id: "ai", analyze: ... }` を追加するだけ。
 
 ---
 
-## 6. 学習の進み具合（study.js）
+## 6. Google 連携（GAS）
 
-```jsonc
-"study": {
-  "examDate": "2027-01-24",
-  "4002": { "totalStages": 0, "current": { "stage": 1, "half": "前半" }, "done": [] },
-  "fp2":  { "chapters": [ { "no": 1, "secs": 0 } ], "current": { "chapter": 1, "sec": 1 },
-            "chapterTestMin": 75, "done": [] }
-}
-```
-- 【min】タスク「4002 半stage」完了 → `current` を次へ（前半→後半→次 stage 前半）。翌日のタスク名が「4002 stage5 後半【min】」のように具体化される。
-- FP2級：Sec 完了 → 次の Sec。章の全 Sec が終わった翌日は「FP2級 第N章 章末問題【min】（見積75分）」を入れ、終わったら次章。
-- **遅れ警告**：残り単位数 ÷ 試験日までの残り日数（試験前の復習期間を設定で確保）＝ 1日に必要な量。1日1単位を超えていたら「遅れ：あとN単位、1日あたりX必要」と表示。
+| 処理 | 実行タイミング | 内容 |
+|---|---|---|
+| 翌日 To Do | 毎晩 **21:50** | 学習計画シートの翌日行＋Googleカレンダーの翌日予定（アプリが登録したものは除く）から翌日のタスクを作り、`tasks` シートに追加。ID は規則で作るので何度実行しても重複しない |
+| カレンダー登録 | アプリの「カレンダーに登録」 | タスクの時刻で予定を作成・更新（`calendarEventId` で同じ予定を更新）、Asia/Tokyo |
+| Gmail 確認候補 | 30 分ごと | 条件に合う未読メールを `inbox` シートへ追加し、「手帳済」ラベルを付ける（以後は出ない）。アプリは同期で受け取って表示 |
+| 23:00 確認 | 毎晩 23:00 | 今日の未完了【min】があれば一覧を自分宛てにメール |
+| 23:30 寝る準備 | 初回セットアップで登録 | 毎日繰り返しのカレンダー予定（通知付き） |
 
----
-
-## 7. Google 連携（GAS）
-
-### 7.1 やり取りの方式（提案）
-**GAS を「Web アプリ」として公開し、手帳アプリから直接呼ぶ**。
-- 認証は長いランダムな「合言葉（トークン）」。アプリの設定画面に URL とトークンを貼るだけ。トークンは端末内だけに保存し、GitHub には置かない。
-- POST は `Content-Type: text/plain` で送る（ブラウザの制約を避ける定番の方法）。
-- 予備手段：通信できないときは、GAS がドライブに置いた JSON を手動で読み込む／アプリの JSON を手動でアップロード。
-
-| 呼び出し | 内容 |
-|---|---|
-| `GET ?action=nextday` | 21:50 に作っておいた翌日 To Do（JSON）を受け取る → アプリが翌日のタスクに取り込み（重複は除外） |
-| `GET ?action=inbox` | Gmail 確認候補を受け取る |
-| `POST {action:"inboxAck", ids}` | アプリが受け取ったメールに「手帳済」ラベル（受け取りに失敗したメールは次回また出る） |
-| `POST {action:"calendar", date, tasks}` | タスク時刻をカレンダーへ登録・更新（`calendarEventId` で更新、Asia/Tokyo） |
-| `POST {action:"backup", data}` | ドライブの「手帳バックアップ」フォルダに `techo-YYYY-MM-DD.json` を保存（30日分保持） |
-
-### 7.2 21:50 の自動実行（NextDay.gs）
-- 時間主導トリガー（毎日 21〜22 時の枠。GAS は分単位の指定ができないため、**21:50 ちょうどにするには「毎日1回トリガー」を 21:50 に作り直す方式**を Setup.gs で実装）。
-- 学習計画スプレッドシートの翌日行 ＋ Google カレンダーの翌日予定 ＋ 学習進捗（アプリが送った study）から翌日 To Do を作り、`nextday.json` としてドライブに保存。
-- カレンダーで手帳アプリが作った予定は除外（二重取り込み防止）。
-
-### 7.3 Gmail 確認候補（Gmail.gs）
-検索条件（設定で変更可）：
-```
-is:unread -label:手帳済 newer_than:14d
-  ( from:(@mizuho-fg.co.jp) OR subject:(締切 OR 提出 OR 期限 OR 日程 OR ご確認) )
-```
-- 本文から日付を抽出：`2026/12/3`、`12月3日`、`12/3(水)`、`明日`/`明後日` など → 締切候補として表示（複数あれば全部、年が省略されたら直近の未来の日付と解釈）。
-- アプリでは「タスクにする（締切候補を選ぶ）」「報連相にする」「無視」を選択。
-
-### 7.4 自動バックアップ
-- ブラウザは閉じている間に動けないため、**その日アプリを最初に開いたとき＋夜の振り返り保存時** に自動でドライブへ送信。アプリを開かない日はデータも変わらないので、これで「毎日」を満たす。
-- 復元：設定 →「ドライブから復元」で日付を選択、または JSON ファイルを読み込み。
+- GAS の時刻指定は「21 時台のどこか」になるため、**ちょうど 21:50 / 23:00 に動かす仕組み**（実行のたびに次回の 1 回だけのトリガーを作り直す）を入れる。
+- Gmail の検索条件（設定で変更可）:
+  ```
+  is:unread -label:手帳済 (from:mizuho-fg@mail.axol.jp OR subject:(締切 OR 提出 OR 期限 OR 日程 OR ご確認))
+  ```
+- 本文の日付検出: `2026/12/3`、`2026年12月3日`、`12月3日`、`12/3(水)`、`明日`・`明後日`。年が無いものは今日以降で一番近い日付と解釈。見つかった日付はすべて締切候補として出す。
 
 ---
 
-## 8. 公開（GitHub Pages）
-- `main` ブランチへのマージで自動デプロイ。URL は `https://harukashibasaki28-hash.github.io/-/`（リポジトリ名が `-` のため）。
-- **無料の GitHub Pages はリポジトリが公開（public）である必要あり**。コードだけが公開され、手帳データ・GAS の URL・トークンはリポジトリに入らないので中身は漏れません。
+## 7. 公開（GitHub Pages）
+- `main` に入ると自動で公開。URL は `https://harukashibasaki28-hash.github.io/-/`（リポジトリ名が `-` のため）。
+- 無料の GitHub Pages はリポジトリを**公開（public）**にする必要がある。公開されるのはプログラムだけで、手帳のデータ・GAS の URL・キーはリポジトリに入らない。
 
 ---
 
-## 9. テスト（node --test）
-- 繰越：複数日の未完了、二重繰越防止、closed 確定、carryCount、テンプレート重複除外、論理日付 4:00 境界
-- 睡眠：日付またぎ、起床日への記録、昼寝は開始日、昼寝の合計と回数
-- 完了率：0件、全完了、繰越分を含むか
-- 平均ずれ・就寝時刻の標準偏差（24時またぎ）
-- タイムライン：75%上限、1.3倍、締切/優先度順、午後優先、後ろ倒し候補
-- 学習：前半→後半→次stage、章末問題の挿入、遅れ警告
-- ルール：各ルールの発火・streak
-- インポート：3形式、欠損項目の補完、不正 JSON の拒否
+## 8. テスト（node --test）
+- **繰越**: 複数日の未完了、closed の確定、carryCount、二重繰越防止（2 台で実行しても同じ ID）、毎日のタスクとの重複除外、4:00 の日付境界
+- **睡眠**: 日付またぎ、起床日に記録、昼寝は開始日、昼寝の回数・合計
+- **完了率**: 0 件、全完了、繰越分の数え方
+- 平均ずれ・就寝時刻の標準偏差、タイムライン、学習進行・章末問題・遅れ警告、ルール（streak 含む）、インポート（3 形式・欠損補完・不正 JSON）、同期（オフライン中の変更、競合時の後勝ち）
 
 ---
 
-## 10. 実装の順番
-1. データ層＋**インポート/エクスポート**＋テスト（最初）
-2. 今日画面：睡眠ボタン・タスク・タイマー・繰越
-3. タイムライン
-4. 分析（ルールエンジン）・今日の進捗・週の振り返り・ログ表・報連相
-5. 通知・.ics・ショートカット
-6. 学習進捗
-7. GAS 一式＋初心者向け手順書
-8. PWA 化・GitHub Pages 公開
+## 9. 実装の順番
+1. データの形＋**JSON インポート/エクスポート**＋テスト（最初）
+2. IndexedDB の控えと今日画面（睡眠ボタン・タスク・計測・繰越）＋テスト
+3. GAS（シート・同期・本人確認）＋同期エンジン＋**設定手順書**
+4. 学習の自動進行
+5. タイムライン・カレンダー登録
+6. 分析（ルール）・今日の進捗・週の振り返り・ログ表・報連相
+7. 通知・.ics・ショートカット、21:50 / Gmail / 23:00 の GAS 処理
+8. PWA 化・GitHub Pages 公開と手順書
