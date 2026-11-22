@@ -30,7 +30,7 @@ test('空き時間の 75% まで。入らない分は後ろ倒し候補（理由
   assert.ok(r.stats.usedMin <= r.stats.capacityMin);
   assert.equal(r.stats.capacityMin, Math.floor(r.stats.freeMin * 0.75));
   assert.ok(r.deferred.length > 0);
-  assert.match(r.deferred[0].reason, /バッファ/);
+  assert.match(r.deferred[0].reason, /上限/);
 });
 
 test('締切が近い → 優先度が高い の順に先に配置', () => {
@@ -79,4 +79,12 @@ test('過去の実績倍率があればそれを使う（同じ種類 2 件以�
 test('今日の途中から作り直すときは今の時刻より後に置く', () => {
   const r = buildTimeline({ date: '2026-11-24', tasks: [T('a', 30)], settings, fixedEvents: [], startMin: 15 * 60 + 2 });
   assert.ok(hmToMin(r.placements[0].start) >= 15 * 60 + 5);
+});
+
+test('1日に使える時間を超えて入れない（時間割の分も数える）', () => {
+  const tasks = [T('pin', 60, { fixedTime: true, start: '09:00', slotMin: 60 }), T('a', 60), T('b', 60)];
+  const r = buildTimeline({ date: '2026-11-24', tasks, settings: Object.assign({}, settings, { availableMin: 150 }), fixedEvents: [] });
+  assert.equal(r.stats.capacityMin, 90);
+  assert.deepEqual(r.placements.map((p) => p.taskId), ['a']);
+  assert.equal(r.deferred[0].taskId, 'b');
 });

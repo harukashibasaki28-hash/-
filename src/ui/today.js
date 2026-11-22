@@ -1,6 +1,6 @@
 // 「今日」画面：睡眠ボタン・お知らせ・タスク・確認候補
 import { esc, fmtMin, fmtTime, tagChip, PRIORITY, isoToLocalInput, localInputToIso } from './util.js';
-import { formatMd, addDays, minOfDay, hmToMin, atTime, parseIso, toIso } from '../core/dates.js';
+import { formatMd, addDays, minOfDay, hmToMin, atTime, parseIso, toIso, weekday } from '../core/dates.js';
 import { runningMinutes, overdueTimers, capTime } from '../core/timer.js';
 import { napSummary, recalcSleep, recalcNap } from '../core/sleep.js';
 import { subjectProgress } from '../core/study.js';
@@ -101,6 +101,8 @@ function alerts(app, dk, now, day) {
   if (plan && plan.upcoming && plan.upcoming.length) out.push('<div class="alert info">📅 近い締切：' + plan.upcoming.map((u) => esc(u.title) + '（' + formatMd(u.date) + '）').join('、') + '</div>');
   const soon = Object.values(v.hourensou).filter((h) => !h.done && h.due && h.due <= addDays(dk, 3)).sort((a, b) => (a.due < b.due ? -1 : 1));
   if (soon.length) out.push('<div class="alert ' + (soon[0].due < dk ? 'danger' : 'info') + '">🗣 報連相：' + soon.map((h) => esc(h.kind + ' ' + h.to + '「' + h.what + '」') + '（' + formatMd(h.due) + (h.due < dk ? ' 期限切れ' : '') + '）').join('、') + '</div>');
+  if (mins >= 21 * 60) out.push('<div class="alert info">🌙 今日の進捗を見て、ひとこと振り返りを書きましょう。<div class="actions"><a class="button" href="#review">今日の進捗へ</a></div></div>');
+  if (weekday(dk) === 0 && mins >= 18 * 60) out.push('<div class="alert info">📈 日曜日です。週の振り返りで、翌週に変えることを 1 つ決めましょう。<div class="actions"><a class="button" href="#review">週の振り返りへ</a></div></div>');
   for (const l of (app.store.meta.actionLog || []).filter((x) => x.date === dk)) out.push('<div class="alert info">🔧 ' + esc(l.text) + '</div>');
   return out.length ? '<section class="alerts">' + out.join('') + '</section>' : '';
 }

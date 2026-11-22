@@ -54,3 +54,72 @@ test('その日の準備（prepare）：学習計画シートの時間割から 
   assert.ok(r.records.some((x) => x.kind === 'plan' && x.id === '2026-11-23'));
   assert.equal(plan.getSheetByName('予定一覧').data[1][5], '進行中');
 });
+
+function fakeCalendar(events) {
+  let n = 0;
+  const mk = (title, start, end, opts) => {
+    const ev = { id: 'ev' + (++n), title, start, end, desc: (opts && opts.description) || '',
+      getId() { return this.id; }, getTitle() { return this.title; }, setTitle(t) { this.title = t; },
+      getStartTime() { return this.start; }, getEndTime() { return this.end; }, setTime(s, e) { this.start = s; this.end = e; },
+      getDescription() { return this.desc; }, setDescription(d) { this.desc = d; }, deleteEvent() { events.splice(events.indexOf(this), 1); },
+      isAllDayEvent: () => false, isRecurringEvent: () => false };
+    events.push(ev); return ev;
+  };
+  return { getEventsForDay: () => events.slice(), getEventById: (id) => events.find((e) => e.id === id) || null, createEvent: mk };
+}
+
+test('カレンダー登録：今の手帳の予定（手帳ID）は作り直さずに更新、新しいものは作成（Asia/Tokyo）', () => {
+  const { ctx } = makeEnv();
+  const events = [];
+  const cal = fakeCalendar(events);
+  const old = cal.createEvent('【手帳】ビジネス英単語4002 Stage 12 後半【min】', new Date('2026-11-23T05:25:00Z'), new Date('2026-11-23T06:05:00Z'), { description: '手帳ID: qi3k4al0w7o0\n優先度: 高' });
+  ctx.CalendarApp = { getDefaultCalendar: () => cal };
+  const r = post(ctx, { key: 'k'.repeat(64), action: 'calendar', date: '2026-11-23', tasks: [
+    { id: 'qi3k4al0w7o0@2026-11-23', title: 'ビジネス英単語4002 Stage 12 後半【min】', start: '15:00', est: 30, priority: 1 },
+    { id: 'new1', title: '書類', start: '16:00', est: 20, priority: 2 },
+  ] });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(events.length, 2, '既存 1 件は更新、新規 1 件');
+  assert.equal(r.mapping['qi3k4al0w7o0@2026-11-23'], old.id);
+  assert.equal(old.start.toISOString(), '2026-11-23T06:00:00.000Z', '15:00 JST');
+  const created = events.find((e) => e.id === r.mapping.new1);
+  assert.equal(created.title, '【手帳】書類');
+  assert.match(created.desc, /手帳ID: new1/);
+});
+
+test('Gmail：条件に合う未読メールを確認候補に入れ、手帳済ラベルを付ける。日付の候補も', () => {
+  const { ctx } = makeEnv();
+  const key = 'k'.repeat(64);
+  post(ctx, { key, action: 'sync', since: 0, changes: [{ kind: 'cfg', id: 'settings', data: { value: { gmailFrom: ['mizuho-fg@mail.axol.jp'], gmailKeywords: ['締切', '提出'] } }, updatedAt: '2026-11-22T00:00:00+09:00' }] });
+  let query = null;
+  const labeled = [];
+  const msg = { getId: () => 'm1', isUnread: () => true, getPlainBody: () => '提出期限は12月3日（木）です。', getFrom: () => 'みずほ <mizuho-fg@mail.axol.jp>', getSubject: () => '【ご確認】書類の提出', getDate: () => new Date('2026-11-22T01:00:00Z') };
+  const thread = { getId: () => 't1', getMessages: () => [msg], addLabel: (l) => labeled.push(l) };
+  ctx.GmailApp = { search: (q) => { query = q; return [thread]; }, getUserLabelByName: () => ({ name: '手帳済' }), createLabel: () => ({}) };
+  vm.runInContext('gmailJob()', ctx);
+  assert.match(query, /from:mizuho-fg@mail\.axol\.jp/);
+  assert.match(query, /-label:手帳済/);
+  assert.match(query, /subject:\(締切 OR 提出\)/);
+  assert.equal(labeled.length, 1);
+  const r = post(ctx, { key, action: 'sync', since: 0, changes: [] });
+  const inbox = r.records.find((x) => x.kind === 'inbox');
+  assert.equal(inbox.data.subject, '【ご確認】書類の提出');
+  assert.equal(inbox.data.status, 'new');
+  assert.ok(inbox.data.dates.some((d) => /-12-03$/.test(d.date)));
+});
+
+test('23:00：未完了の【min】があれば自分宛てにメール', () => {
+  const { ctx } = makeEnv();
+  const today = vm.runInContext('todayKey_()', ctx);
+  post(ctx, { key: 'k'.repeat(64), action: 'sync', since: 0, changes: [
+    { kind: 'task', id: 'a', data: { date: today, title: 'FP2級 CH4 Sec5【min】', tag: 'min', done: false, est: 45 }, updatedAt: '2026-11-22T00:00:00+09:00' },
+    { kind: 'task', id: 'b', data: { date: today, title: '日経【A】', tag: 'A', done: false }, updatedAt: '2026-11-22T00:00:00+09:00' },
+  ] });
+  const sent = [];
+  ctx.MailApp = { sendEmail: (to, subj, body) => sent.push({ to, subj, body }) };
+  ctx.Session = { getEffectiveUser: () => ({ getEmail: () => 'me@example.com' }) };
+  vm.runInContext('minCheckJob()', ctx);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].subj, '【手帳】未完了の【min】1件');
+  assert.match(sent[0].body, /FP2級 CH4 Sec5/);
+});

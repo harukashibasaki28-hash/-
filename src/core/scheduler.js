@@ -65,7 +65,12 @@ export function buildTimeline(opts) {
   for (const b of blocks) free = subtract(free, b.s, b.e);
   free = free.filter((iv) => iv.e - iv.s >= 5).map((iv) => ({ s: iv.s, e: iv.e, run: 0 }));
   const freeMin = free.reduce((a, iv) => a + iv.e - iv.s, 0);
-  const capacity = Math.floor(freeMin * (1 - (st.bufferRatio == null ? 0.25 : st.bufferRatio)));
+  let capacity = Math.floor(freeMin * (1 - (st.bufferRatio == null ? 0.25 : st.bufferRatio)));
+  // 「1 日に使える時間」：時間割で決まっている分を引いた残りも上限にする
+  if (st.availableMin > 0) {
+    const pinnedMin = pinned.reduce((a, t) => a + (t.slotMin || t.est || 30), 0);
+    capacity = Math.min(capacity, Math.max(0, st.availableMin - pinnedMin));
+  }
 
   const focus = FOCUS[st.focusPeriod || 'afternoon'] || FOCUS.afternoon;
   const breakEvery = st.breakEveryMin || 90, breakMin = st.breakMin || 10;
@@ -76,7 +81,7 @@ export function buildTimeline(opts) {
   for (const t of candidates) {
     const f = factorFor(t, opts.ratios, st.defaultEstFactor);
     const dur = Math.max(5, roundUp5((t.est || 15) * f.factor));
-    if (used + dur > capacity) { deferred.push({ taskId: t.id, title: t.title, dur: dur, reason: 'バッファ（空き時間の' + Math.round((st.bufferRatio == null ? 0.25 : st.bufferRatio) * 100) + '%）を残すため' }); continue; }
+    if (used + dur > capacity) { deferred.push({ taskId: t.id, title: t.title, dur: dur, reason: '入れる上限（空き時間の' + Math.round((1 - (st.bufferRatio == null ? 0.25 : st.bufferRatio)) * 100) + '%・1日に使える時間）を超えるため' }); continue; }
     const need = (iv) => dur + (iv.run > 0 && iv.run + dur > breakEvery ? breakMin : 0);
     const fits = free.filter((iv) => iv.e - iv.s >= need(iv));
     if (!fits.length) { deferred.push({ taskId: t.id, title: t.title, dur: dur, reason: dur + '分続けて入る空き時間がない' }); continue; }
