@@ -29,6 +29,7 @@ export function render(app) {
   for (const p of r.placements) rows.push({ start: p.start, end: p.end, cls: 'blk-task', title: p.title, taskId: p.taskId, dur: p.dur, factor: p.factor });
   for (const b of r.breaks) rows.push({ start: b.start, end: b.end, cls: 'blk-break', title: '休憩' });
   rows.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+  const visible = rows.filter((x) => x.end > r.stats.dayStart);
   const KIND = { fixed: '固定', travel: '移動', meal: '食事', pinned: '時間割' };
 
   const out = [];
@@ -36,10 +37,10 @@ export function render(app) {
     '<button data-act="tlDate" data-date="' + today + '"' + (dk === today ? ' class="on"' : '') + '>今日</button>' +
     '<button data-act="tlDate" data-date="' + addDays(today, 1) + '"' + (dk !== today ? ' class="on"' : '') + '>明日</button></div></div>');
   out.push('<p class="muted small">' + formatMd(dk) + '　' + r.stats.dayStart + '〜' + r.stats.dayEnd + '　空き ' + fmtMin(r.stats.freeMin) + '・入れる上限 ' + fmtMin(r.stats.capacityMin) + '（75%）・配置 ' + fmtMin(r.stats.usedMin) + '・バッファ ' + fmtMin(r.stats.bufferMin) + '</p>');
-  out.push('<ol class="timeline">' + rows.map((x) => {
+  out.push('<ol class="timeline">' + visible.map((x) => {
     const t = x.taskId ? taskById[x.taskId] : null;
     return '<li class="' + x.cls + '"><span class="tl-time">' + x.start + '<small>' + x.end + '</small></span><span class="tl-body">' +
-      (KIND[x.kind] ? '<span class="chip">' + KIND[x.kind] + '</span> ' : '') + (t ? tagChip(t.tag) + ' ' : '') + esc(x.title) +
+      (KIND[x.kind] ? '<span class="chip">' + KIND[x.kind] + '</span> ' : '') + (t ? tagChip(t.tag) + ' ' : '') + esc(String(x.title).replace(/【(min|A|任意)】/g, '')) +
       (x.dur ? '<small class="muted">　' + x.dur + '分（見積×' + x.factor + '）</small>' : '') + '</span></li>';
   }).join('') + '</ol>');
   out.push('<div class="actions"><button class="primary" data-act="tlApply">この配置で決定</button><button data-act="tlCalendar">Google カレンダーに登録</button></div>');

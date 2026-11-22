@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>手帳</title>
+  <meta name="description" content="スケジュールと睡眠の手帳">
+  <meta name="theme-color" content="#2f5d50">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="手帳">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="src/ui/styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>手帳 <span id="hdr-date"></span></h1>
+    <button id="sync-chip" class="sync-chip" type="button">…</button>
+  </header>
+  <main id="view"><p class="muted center">読み込み中…</p></main>
+  <nav class="tabs" aria-label="画面の切り替え">
+    <a href="#today" data-tab="today"><span>☀️</span>今日</a>
+    <a href="#timeline" data-tab="timeline"><span>🗓</span>予定</a>
+    <a href="#review" data-tab="review"><span>📈</span>振り返り</a>
+    <a href="#study" data-tab="study"><span>📚</span>学習</a>
+    <a href="#hourensou" data-tab="hourensou"><span>🗣</span>報連相</a>
+    <a href="#log" data-tab="log"><span>📋</span>ログ</a>
+    <a href="#settings" data-tab="settings"><span>⚙️</span>設定</a>
+  </nav>
+  <dialog id="modal"><button class="modal-close" data-close aria-label="閉じる">×</button><div class="modal-body"></div></dialog>
+  <dialog id="confirm"><p class="confirm-msg"></p><div class="actions"><button data-ng type="button"></button><button data-ok class="primary" type="button"></button></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

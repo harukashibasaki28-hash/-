@@ -41,7 +41,7 @@ export function render(app) {
   const defEnd = weekday(today) === 0 ? today : lastSunday(addDays(today, 7));
   const end = app.state.weekEnd || defEnd;
   const w = weekSummary(v.days, end, v.settings.bedTarget);
-  const perDay = w.rows.map((r) => evaluateRules(ctxFor(app, r.date)).findings);
+  const perDay = w.rows.filter((r) => r.date < today).map((r) => evaluateRules(ctxFor(app, r.date)).findings);
   const focus = weeklyFocus(perDay);
   out.push('<section class="card"><div class="row-between"><h2>週の振り返り</h2><div class="seg">' +
     '<button data-act="wkEnd" data-date="' + addDays(end, -7) + '">◀</button><button data-act="wkEnd" data-date="' + defEnd + '"' + (end === defEnd ? ' class="on"' : '') + '>今週</button>' +

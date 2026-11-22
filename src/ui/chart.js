@@ -4,7 +4,7 @@ import { esc } from './util.js';
 // rows: [{label, value}]。value は 0〜max。null は欠測
 export function lineChart(rows, opts) {
   const o = Object.assign({ max: 100, unit: '%', height: 140 }, opts || {});
-  const W = 320, H = o.height, pl = 32, pr = 10, pt = 12, pb = 24;
+  const W = 320, H = o.height, pl = 36, pr = 22, pt = 12, pb = 24;
   const n = rows.length;
   const x = (i) => pl + (n <= 1 ? 0 : (i * (W - pl - pr)) / (n - 1));
   const y = (v) => pt + (1 - v / o.max) * (H - pt - pb);
