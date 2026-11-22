@@ -2,7 +2,7 @@
 // 「どこまで終わったか」は学習タスクの完了記録から毎回計算する（位置を別に保存しない）。
 // GAS にも同梱される。import は同梱ファイル（dates.js / tasks.js）からのみ。
 import { addDays, weekday, formatMd } from './dates.js';
-import { studyTaskId, normalizeTask } from './tasks.js';
+import { studyTaskId, normalizeTask, carriedOriginals } from './tasks.js';
 
 function fmt(format, n) { return String(format || '{n}').replace('{n}', n); }
 
@@ -80,6 +80,7 @@ export function unitStatus(subject, tasks, date, mode) {
   const units = expandUnits(subject);
   const idxBefore = subject.doneBefore ? units.findIndex((u) => u.key === subject.doneBefore) : -1;
   const byKey = {};
+  const carried = carriedOriginals(tasks);
   for (const t of tasks || []) {
     if (t.deleted || t.subjectId !== subject.id || !t.unitKey) continue;
     (byKey[t.unitKey] = byKey[t.unitKey] || []).push(t);
@@ -100,7 +101,7 @@ export function unitStatus(subject, tasks, date, mode) {
     return Object.assign({}, u, {
       done: !!doneDate, doneDate: doneDate,
       tasks: ts,
-      openOn: ts.filter((t) => !t.done && !t.carriedTo).map((t) => t.date),
+      openOn: ts.filter((t) => !t.done && !t.carriedTo && !carried[t.id]).map((t) => t.date),
     });
   });
 }

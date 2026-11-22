@@ -122,3 +122,20 @@ test('学習タスクを完了すると、学習計画シートへの書き戻�
   await A.toggleDone(phone.store, 'stu:fp2:CH4-Sec5', true, at('2026-11-23T15:00:00+09:00'));
   assert.deepEqual(phone.store.meta.planUpdates, [{ title: 'FP2級：タックスプランニング', progress: '進行中' }]);
 });
+
+test('オフラインで繰越したあと、別の端末で元が完了になっていたら繰越コピーを消す', async () => {
+  const srv = server();
+  const phone = await device(srv, true);
+  const t = await A.addTask(phone.store, '2026-11-23', { title: 'X' });
+  await phone.sync.sync();
+  const pc = await device(srv, true);
+  await pc.sync.sync();
+  await A.toggleDone(pc.store, t.id, true, at('2026-11-23T23:00:00+09:00'));
+  await pc.sync.sync();
+  await A.runDayStart(phone.store, '2026-11-24', at('2026-11-24T07:00:00+09:00')); // オフラインのまま繰越
+  assert.ok(phone.store.view.days['2026-11-24'].tasks.some((x) => x.id === t.id + '@2026-11-24'));
+  await phone.sync.sync();
+  await A.cleanupCarried(phone.store, '2026-11-24');
+  assert.equal(phone.store.view.allTasks.find((x) => x.id === t.id).done, true, '別端末の完了は上書きされない');
+  assert.ok(!(phone.store.view.days['2026-11-24'] || { tasks: [] }).tasks.some((x) => x.id === t.id + '@2026-11-24'));
+});

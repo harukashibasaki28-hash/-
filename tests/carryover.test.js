@@ -19,8 +19,7 @@ test('前日の未完了を今日へコピー（carryCount+1・carriedFrom）し
   assert.deepEqual(c.sessions, [], '計測はリセット');
   assert.equal(c.actualMin, 0);
   assert.deepEqual(r.closedDays['2026-11-22'], { planned: 3, done: 1, rate: 0.33 });
-  assert.equal(r.updatedTasks.length, 2);
-  assert.ok(r.updatedTasks.every((t) => t.carriedTo === '2026-11-23'));
+  assert.equal(r.updatedTasks, undefined, '元のタスクは書き換えない（別端末の完了を上書きしないため）');
 });
 
 test('複数日分の未完了（数日アプリを開かなかった）をすべて今日へ', () => {
@@ -52,8 +51,8 @@ test('繰越の繰越でも ID が伸びない', () => {
   assert.equal(r.newTasks[0].carriedFrom, '2026-11-23');
 });
 
-test('すでに繰越済み（carriedTo あり）・削除済みは繰越さない', () => {
-  const days = { '2026-11-22': { tasks: [T('a', { carriedTo: '2026-11-23' }), T('d', { deleted: true })] } };
+test('すでに繰越済み（後の日に繰越コピーがある）・削除済みは繰越さない', () => {
+  const days = { '2026-11-22': { tasks: [T('a'), T('d', { deleted: true })] }, '2026-11-23': { closed: true, tasks: [T('a@2026-11-23', { done: true })] } };
   const r = computeCarryover(days, '2026-11-24');
   assert.equal(r.newTasks.length, 0);
   assert.equal(r.closedDays['2026-11-22'].planned, 1, '削除済みは予定数に数えない');
@@ -72,4 +71,10 @@ test('曜日指定・無効のテンプレート', () => {
   const templates = [{ id: 'w', title: '月曜だけ', weekdays: [1] }, { id: 'off', title: '停止中', active: false }];
   assert.equal(templateTasksFor('2026-11-23', templates, [], 1).length, 1);
   assert.equal(templateTasksFor('2026-11-24', templates, [], 2).length, 0);
+});
+
+test('削った繰越コピーがあれば、元のタスクはもう繰越さない', () => {
+  const days = { '2026-11-22': { tasks: [T('a')] } };
+  const r = computeCarryover(days, '2026-11-24', [{ id: 'a@2026-11-23', date: '2026-11-23' }]);
+  assert.equal(r.newTasks.length, 0);
 });

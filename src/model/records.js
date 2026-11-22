@@ -37,8 +37,9 @@ export function buildView(records, defaults) {
     links: defaults.links, state: {},
   };
   const tasksByDate = {};
+  v.deletedTasks = [];
   for (const r of records) {
-    if (r.deleted) continue;
+    if (r.deleted) { if (r.kind === 'task') v.deletedTasks.push(Object.assign({}, r.data, { id: r.id, deleted: true })); continue; }
     const d = r.data || {};
     switch (r.kind) {
       case 'day': v.days[r.id] = Object.assign(emptyDay(), d, { date: r.id, tasks: [] }); break;

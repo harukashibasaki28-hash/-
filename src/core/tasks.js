@@ -19,6 +19,23 @@ export function randomId(len) {
 // 繰越コピーの ID：元の ID（@ より前）＋ @ ＋ 繰越先の日付。何台で繰越しても同じ ID になる
 export function baseId(id) { return String(id).split('@')[0]; }
 export function carriedId(id, toDate) { return baseId(id) + '@' + toDate; }
+// 繰越コピーがある（＝すでに繰り越された）タスクの ID 一覧
+// 元のタスクは書き換えない（別の端末での「完了」を上書きしないため）
+export function carriedOriginals(tasks) {
+  const latest = {};
+  for (const t of tasks || []) {
+    if (t.deleted || String(t.id).indexOf('@') < 0) continue;
+    const b = baseId(t.id);
+    if (!latest[b] || t.date > latest[b]) latest[b] = t.date;
+  }
+  const out = {};
+  for (const t of tasks || []) {
+    const l = latest[baseId(t.id)];
+    if (l && t.date < l) out[t.id] = l;
+  }
+  return out;
+}
+
 export function templateTaskId(templateId, dk) { return 'tpl:' + templateId + ':' + dk; }
 export function studyTaskId(subjectId, unitKey) { return 'stu:' + subjectId + ':' + unitKey; }
 

@@ -1,6 +1,6 @@
 // アプリの操作（画面から呼ぶ）。データの変更はすべてここを通る
 import { toIso, addDays, logicalDate, parseIso } from './core/dates.js';
-import { normalizeTask, randomId, tagOf } from './core/tasks.js';
+import { normalizeTask, randomId, tagOf, carriedId } from './core/tasks.js';
 import { computeCarryover } from './core/carryover.js';
 import { startSleep, endSleep, startNap, endNap } from './core/sleep.js';
 import { startTask, stopTask, setDone } from './core/timer.js';
@@ -34,8 +34,7 @@ export async function seedDefaults(store, defaults, rules) {
 export async function runDayStart(store, dk, now) {
   const v = store.view;
   const items = [];
-  const co = computeCarryover(v.days, dk);
-  for (const t of co.updatedTasks) items.push({ kind: 'task', id: t.id, data: strip(t) });
+  const co = computeCarryover(v.days, dk, v.deletedTasks);
   for (const t of co.newTasks) items.push({ kind: 'task', id: t.id, data: strip(t) });
   for (const d of Object.keys(co.closedDays)) {
     const cur = store.get('day', d);
@@ -60,6 +59,21 @@ export async function runDayStart(store, dk, now) {
 }
 
 function strip(t) { const o = Object.assign({}, t); delete o.id; return o; }
+
+// オフライン中に繰越したあと、別の端末で元のタスクが完了になっていたら、手を付けていない繰越コピーを消す
+export async function cleanupCarried(store, dk) {
+  const v = store.view;
+  const items = [];
+  for (const t of v.allTasks) {
+    if (t.done || !t.carriedFrom) continue;
+    if (t.date !== dk || t.runningSince || (t.sessions && t.sessions.length) || t.id !== carriedId(t.id, dk)) continue;
+    const base = t.id.split('@')[0];
+    const origDone = v.allTasks.some((o) => o.done && o.date === t.carriedFrom && o.id.split('@')[0] === base);
+    if (origDone) items.push({ kind: 'task', id: t.id, data: strip(t), deleted: true });
+  }
+  if (items.length) await store.putMany(items);
+  return items.length;
+}
 
 // 実績倍率のルール（raiseEstimate）を自動で適用
 export async function applyRuleActions(store, closedDk, todayDk) {
