@@ -238,13 +238,15 @@ function outerItems(subject) {
 
 function innerCount(subject, item) {
   const inner = (subject.structure || {}).inner || {};
+  if (Array.isArray(item.units)) return item.units.length;
   if (item.secs != null) return Number(item.secs);
   if (Array.isArray(inner.labels)) return inner.labels.length;
   return Number(inner.count) || 1;
 }
 
-function innerKey(subject, j) {
+function innerKey(subject, j, item) {
   const inner = (subject.structure || {}).inner || {};
+  if (item && Array.isArray(item.units)) { const u = item.units[j - 1]; return typeof u === 'string' ? u : u.label; }
   if (Array.isArray(inner.labels)) return inner.labels[j - 1];
   return fmt(inner.format || 'Sec{n}', j);
 }
@@ -259,10 +261,11 @@ function expandUnits(subject) {
     const outerTitle = item.label ? ok + ' ' + item.label : ok;
     const cnt = innerCount(subject, item);
     for (let j = 1; j <= cnt; j++) {
-      const ik = innerKey(subject, j);
+      const ik = innerKey(subject, j, item);
+      const u = Array.isArray(item.units) && typeof item.units[j - 1] === 'object' ? item.units[j - 1] : {};
       units.push({
         key: ok + '-' + ik, outerKey: ok, outerTitle: outerTitle, item: item, milestone: false,
-        title: subject.name + ' ' + outerTitle + ' ' + ik, est: subject.est || 30,
+        title: subject.name + ' ' + (st.outer && st.outer.hideInTitle ? '' : outerTitle + ' ') + ik, est: u.est || item.est || subject.est || 30,
       });
     }
     for (const ms of subject.milestones || []) {
@@ -327,9 +330,15 @@ function unitStatus(subject, tasks, date, mode) {
 }
 
 // その日にやる「通常の単位」の数
-function dailyQuota(subject, status, date) {
+function dailyQuota(subject, status, date, tasks, mode) {
   if (subject.status === 'finished') return 0;
   if (!isStudyDay(subject, date)) return 0;
+  if (tasks && !started(subject, tasks, date, mode)) return 0;
+  if (tasks && subject.everyNDays > 1) {
+    let last = null;
+    for (const t of tasks) if (!t.deleted && t.subjectId === subject.id && t.date < date && (!last || t.date > last)) last = t.date;
+    if (last && diffDays(last, date) < subject.everyNDays) return 0;
+  }
   const remainingAll = status.filter((u) => !u.milestone && !u.done).length;
   if (!remainingAll) return 0;
   if (subject.perDayMode !== 'auto') return Math.min(Number(subject.perDay) || 1, remainingAll);
@@ -337,6 +346,19 @@ function dailyQuota(subject, status, date) {
   let k = 1;
   for (const n of need) k = Math.max(k, n.perDay);
   return Math.min(k, Number(subject.maxPerDay) || 3, remainingAll);
+}
+
+// 開始の条件：startDate 以降、かつ startAfter の単位（別の科目でもよい）が前日までに終わっている
+function started(subject, tasks, date, mode) {
+  if (subject.startDate && date < subject.startDate) return false;
+  const sa = subject.startAfter;
+  if (!sa || !sa.unitKey) return true;
+  for (const t of tasks || []) {
+    if (t.deleted || t.subjectId !== (sa.subjectId || subject.id) || t.unitKey !== sa.unitKey) continue;
+    if (t.done && (t.doneAt ? String(t.doneAt).slice(0, 10) : t.date) < date) return true;
+    if (mode === 'optimistic' && t.date < date) return true;
+  }
+  return !!sa.already;
 }
 
 // 期限ごとに「1 日あたり何単位必要か」
@@ -373,7 +395,7 @@ function paceNeeds(subject, status, date) {
 function planStudyDay(subject, tasks, date, mode) {
   if (subject.status === 'finished') return { quota: 0, carried: 0, generate: [], keepIds: {} };
   const status = unitStatus(subject, tasks, date, mode);
-  const quota = dailyQuota(subject, status, date);
+  const quota = dailyQuota(subject, status, date, tasks, mode);
   const carriedTasks = (tasks || []).filter((t) => !t.deleted && t.subjectId === subject.id && t.date === date && !t.done && t.carriedFrom);
   const carriedKeys = {};
   for (const t of carriedTasks) carriedKeys[t.unitKey] = true;
@@ -438,7 +460,8 @@ function subjectProgress(subject, tasks, date) {
   if (remaining > 0 && subject.status !== 'finished') {
     // 1 日 normal 単位のペースで進んだ場合に終わる日
     let left = remaining, d = date, guard = 0;
-    while (left > 0 && guard++ < 2000) { if (isStudyDay(subject, d)) left -= normal; if (left > 0) d = addDays(d, 1); }
+    const step = subject.everyNDays > 1 ? subject.everyNDays : 1;
+    while (left > 0 && guard++ < 2000) { if (isStudyDay(subject, d)) { left -= normal; if (left > 0) d = addDays(d, step); } else d = addDays(d, 1); }
     projected = d;
   }
   const messages = [];
@@ -450,9 +473,129 @@ function subjectProgress(subject, tasks, date) {
   return {
     total: regular.length, done: done, remaining: remaining, next: next, needs: needs,
     behind: behind.length > 0, messages: messages, actualMin: actualMin, projectedFinish: projected,
-    quotaToday: dailyQuota(subject, status, date),
+    quotaToday: dailyQuota(subject, status, date, tasks, 'actual'),
     units: status,
   };
+}
+
+
+// ----- src/core/srs.js -----
+// 金フレなどの「ブロックごとに忘却曲線で復習する」教材
+// 状態（学習回数・最後に学習した日・2周目が済んだか）は、初期値＋完了した金フレのタスクから毎回計算する。
+// GAS にも同梱される。import は同梱ファイルからのみ。
+
+
+const DEFAULT_INTERVALS = [1, 3, 7, 14, 30]; // 学習回数 1,2,3,4,5以上 → 次の復習まで（日）
+
+function intervalFor(subject, count) {
+  const iv = subject.intervals || DEFAULT_INTERVALS;
+  return iv[Math.min(Math.max(count, 1), iv.length) - 1];
+}
+
+function srsTaskId(subjectId, dk) { return 'srs:' + subjectId + ':' + dk; }
+
+function doneDateOf(t) { return t.doneAt ? String(t.doneAt).slice(0, 10) : t.date; }
+
+// ブロックごとの状態。mode 'optimistic' は date より前の未完了タスクも終わった前提（21:50 の翌日作成用）
+function srsState(subject, tasks, date, mode) {
+  const st = {};
+  const init = subject.initial || {};
+  for (const b of subject.blocks || []) {
+    const i = init[b.key] || {};
+    st[b.key] = { key: b.key, block: b, count: Number(i.count) || 0, last: i.last || null, round2: !!i.round2 };
+  }
+  const asOf = subject.initialAsOf || '0000-00-00';
+  const list = [];
+  for (const t of tasks || []) {
+    if (t.deleted || t.subjectId !== subject.id || !t.srsBlocks) continue;
+    let d = null;
+    if (t.done) d = doneDateOf(t);
+    else if (mode === 'optimistic' && t.date < date) d = t.date;
+    if (!d || d < asOf || d >= date) continue;
+    list.push({ d: d, t: t });
+  }
+  list.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+  for (const x of list) {
+    const doneKeys = x.t.done && Array.isArray(x.t.srsDone) ? x.t.srsDone : x.t.srsBlocks.map((b) => b.key);
+    for (const b of x.t.srsBlocks) {
+      if (doneKeys.indexOf(b.key) < 0 || !st[b.key]) continue;
+      const s = st[b.key];
+      if (s.last === x.d) continue; // 同じ日に二重に数えない
+      s.count++; s.last = x.d;
+      if (b.mode === 'all') s.round2 = true;
+    }
+  }
+  for (const k of Object.keys(st)) {
+    const s = st[k];
+    s.due = s.round2 && s.last ? addDays(s.last, intervalFor(subject, s.count)) : null;
+    s.overdue = s.due ? diffDays(s.due, date) : null; // 0 = 今日が復習日、正 = 遅れ
+  }
+  return st;
+}
+
+function blockMin(subject, b, mode) {
+  const per = mode === 'all' ? (subject.minAll || 15) : (subject.minX || 8);
+  return Math.round(per * ((b.words || 100) / 100));
+}
+
+// その日のブロックを選ぶ（説明資料のルールどおり）
+// ① 復習日が来たブロックを、遅れが大きい順に（学習回数 2 回以上は ×印中心）
+// ② 2 周目がまだのブロックを 1 つ（全語、決めた順番で）
+// ③ 2 ブロックに届かなければ、次の復習日が近いブロックで補う
+// 多くても 3 ブロック・40 分まで
+function planSrs(subject, tasks, date, mode) {
+  if (subject.status === 'finished') return null;
+  const st = srsState(subject, tasks, date, mode);
+  const daily = subject.dailyBlocks || 2;
+  const maxBlocks = subject.maxBlocks || 3;
+  const maxMin = subject.maxMin || 40;
+  const order = subject.round2Order || (subject.blocks || []).map((b) => b.key);
+  const fresh = order.map((k) => st[k]).find((s) => s && !s.round2) || null;
+  const due = Object.keys(st).map((k) => st[k]).filter((s) => s.due && s.overdue >= 0).sort((a, b) => b.overdue - a.overdue || (a.key < b.key ? -1 : 1));
+  const chosen = [];
+  let minutes = 0;
+  const add = (s, m) => {
+    const min = blockMin(subject, s.block, m);
+    if (chosen.length >= maxBlocks || (chosen.length && minutes + min > maxMin)) return false;
+    chosen.push({ key: s.key, mode: m, label: s.block.label, words: s.block.words || 100, min: min, overdue: s.overdue, count: s.count });
+    minutes += min;
+    return true;
+  };
+  const reviewSlots = fresh ? maxBlocks - 1 : maxBlocks;
+  for (const s of due.slice(0, reviewSlots)) add(s, s.count >= 2 ? 'x' : 'all');
+  if (fresh) add(fresh, 'all');
+  if (chosen.length < daily) {
+    const upcoming = Object.keys(st).map((k) => st[k]).filter((s) => s.due && s.overdue < 0 && !chosen.some((c) => c.key === s.key))
+      .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+    for (const s of upcoming) { if (chosen.length >= daily) break; add(s, 'x'); }
+  }
+  if (!chosen.length) return null;
+  const tag = subject.tag || 'min';
+  const words = chosen.reduce((a, c) => a + c.words, 0);
+  return normalizeTask({
+    id: srsTaskId(subject.id, date),
+    title: subject.name + ' ' + chosen.map((c) => c.label + (c.mode === 'x' ? '（×印）' : '（全語）')).join('・') + '【' + tag + '】',
+    priority: subject.priority || 1, est: minutes, tag: tag,
+    subjectId: subject.id, srsBlocks: chosen.map((c) => ({ key: c.key, mode: c.mode })), srsWords: words,
+    source: 'srs', noCarry: true, mustKeep: true,
+  }, date);
+}
+
+// 学習画面用
+function srsOverview(subject, tasks, date) {
+  // 今日やった分も反映する（遅れの日数は今日を基準に）
+  const st = srsState(subject, tasks, addDays(date, 1), 'actual');
+  for (const k of Object.keys(st)) if (st[k].due) st[k].overdue = diffDays(st[k].due, date);
+  const order = subject.round2Order || [];
+  return (subject.blocks || []).map((b) => {
+    const s = st[b.key];
+    let status, next;
+    if (!s.round2) { status = 'todo'; next = '2周目を全語で' + (order.indexOf(b.key) >= 0 ? '（' + (order.filter((k) => !st[k].round2).indexOf(b.key) + 1) + '番目）' : ''); }
+    else if (s.overdue > 0) { status = 'late'; next = s.overdue + '日遅れ → ' + (s.count >= 2 ? '×印で回収' : '全語'); }
+    else if (s.overdue === 0) { status = 'due'; next = '今日が復習日 → ' + (s.count >= 2 ? '×印中心' : '全語'); }
+    else { status = 'ok'; next = s.due.slice(5).replace('-', '/') + ' に復習（' + intervalFor(subject, s.count) + '日後）'; }
+    return { key: b.key, label: b.label, level: b.level || '', words: b.words || 100, count: s.count, last: s.last, round2: s.round2, due: s.due, status: status, next: next };
+  });
 }
 
 
@@ -696,8 +839,10 @@ function calendarItems(events, slots) {
 
 
 
+
 // ctx: { templates, subjects, tasksAll, links, mode, planItems?, timetableRows?, calendarEvents? }
-// 返り値: { create: [新しいタスク], patch: [{id, start, fixedTime, slotMin}], studyKeep: {subjectId: keepIds}, plan }
+// 返り値: { create: [新しいタスク], patch: [{id, start, fixedTime, slotMin}], replace: [手を付けていない金フレのタスクの差し替え],
+//          studyKeep: {subjectId: keepIds}, plan }
 function buildDay(dk, ctx) {
   const all = (ctx.tasksAll || []).filter((t) => !t.deleted);
   const onDay = all.filter((t) => t.date === dk);
@@ -709,8 +854,19 @@ function buildDay(dk, ctx) {
   for (const t of templateTasksFor(dk, ctx.templates, onDay, weekday(dk))) add(t);
 
   const studyKeep = {};
+  const replace = [];
   for (const s of ctx.subjects || []) {
     if (s.status === 'finished') continue;
+    if (s.type === 'srs') {
+      const t = planSrs(s, all, dk, ctx.mode || 'actual');
+      if (!t) continue;
+      const cur = byId[t.id];
+      if (!cur) add(t);
+      else if (!cur.done && !cur.runningSince && !(cur.sessions && cur.sessions.length) && JSON.stringify(cur.srsBlocks) !== JSON.stringify(t.srsBlocks)) {
+        replace.push(Object.assign({}, cur, { title: t.title, est: t.est, srsBlocks: t.srsBlocks, srsWords: t.srsWords }));
+      }
+      continue;
+    }
     const p = planStudyDay(s, all.concat(create), dk, ctx.mode || 'actual');
     studyKeep[s.id] = p.keepIds;
     for (const t of p.generate) add(t);
@@ -741,20 +897,19 @@ function buildDay(dk, ctx) {
         if (c) Object.assign(c, { start: p.start, fixedTime: true, slotMin: p.slotMin });
         else patch.push(p);
       };
-      if (link && link.template) {
-        const t = dayTasks.find((x) => x.templateId === link.template && !x.done);
+      if (link && (link.template || link.subject || link.rest)) {
+        // 順番：rest（枠の残り）→ 学習科目 → 毎日のタスク
+        const tpl = link.template ? dayTasks.find((x) => x.templateId === link.template && !x.done) : null;
+        const subj = link.subject ? dayTasks.filter((x) => x.subjectId === link.subject && !x.done) : [];
         if (link.rest) {
-          const restMin = Math.max(10, slot.min - ((t && t.est) || 0));
+          const used = ((tpl && tpl.est) || 0) + subj.reduce((a, t) => a + (t.est || 0), 0);
+          const restMin = Math.max(10, slot.min - used);
           const id = 'tt:' + dk + ':' + slot.key;
           add(normalizeTask({ id: id, title: link.rest, est: restMin, priority: 2, source: 'timetable' }, dk));
           place(create.find((x) => x.id === id) || byId[id], restMin);
         }
-        if (t) place(t, t.est || slot.min);
-        continue;
-      }
-      if (link && link.subject) {
-        const ts = dayTasks.filter((x) => x.subjectId === link.subject && !x.done);
-        for (const t of ts) place(t, t.est || 45);
+        for (const t of subj) place(t, t.est || 45);
+        if (tpl) place(tpl, tpl.est || slot.min);
         continue;
       }
       const id = 'tt:' + dk + ':' + slot.key;
@@ -769,7 +924,7 @@ function buildDay(dk, ctx) {
     for (const g of ci.goals) if (!plan.goals.some((x) => x.title === g.title)) plan.goals.push(g);
   }
 
-  return { create: create, patch: patch, studyKeep: studyKeep, plan: plan };
+  return { create: create, patch: patch, replace: replace, studyKeep: studyKeep, plan: plan };
 }
 
 // 日付が変わってアプリを開いたとき、21:50 に作った学習タスクを実際の完了状況に合わせる
@@ -1224,6 +1379,13 @@ function prepareDay_(stores, dk, mode) {
     var nd = rec.data || {};
     nd.start = pt.start; nd.fixedTime = true; nd.slotMin = pt.slotMin;
     putRec_(stores, 'task', pt.id, nd, false);
+  }
+  for (var q = 0; q < (r.replace || []).length; q++) {
+    var rp = r.replace[q];
+    var cur = getRec_(stores, 'task', rp.id);
+    if (!cur || cur.deleted || (cur.data && (cur.data.done || (cur.data.sessions && cur.data.sessions.length)))) continue;
+    var rd = JSON.parse(JSON.stringify(rp)); delete rd.id;
+    putRec_(stores, 'task', rp.id, rd, false);
   }
   var plan = r.plan; plan.builtAt = toIso(new Date()); plan.mode = mode;
   putRec_(stores, 'plan', dk, plan, false);

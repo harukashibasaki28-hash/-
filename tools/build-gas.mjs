@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SHARED = ['dates.js', 'tasks.js', 'study.js', 'planSheet.js', 'dayBuild.js', 'dateExtract.js'];
+const SHARED = ['dates.js', 'tasks.js', 'study.js', 'srs.js', 'planSheet.js', 'dayBuild.js', 'dateExtract.js'];
 const GAS = ['Main.gs', 'Db.gs', 'Sync.gs', 'NextDay.gs', 'Calendar.gs', 'Gmail.gs', 'Night.gs', 'Setup.gs'];
 
 export function stripModule(src) {

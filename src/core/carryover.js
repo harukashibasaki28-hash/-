@@ -23,7 +23,7 @@ export function computeCarryover(days, today, deletedTasks) {
     if (!day || day.closed) continue;
     const tasks = (day.tasks || []).filter((t) => !t.deleted);
     for (const t of tasks) {
-      if (t.done || carried[t.id] || t.carriedTo) continue;
+      if (t.done || carried[t.id] || t.carriedTo || t.noCarry) continue; // 金フレは繰り越さない（翌日に選び直す）
       const id = carriedId(t.id, today);
       if (existing[id]) continue;
       existing[id] = true;

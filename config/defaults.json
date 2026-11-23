@@ -1,6 +1,9 @@
 {
   "settings": {
-    "wakeTarget": { "from": "05:00", "to": "07:00" },
+    "wakeTarget": {
+      "from": "05:00",
+      "to": "07:00"
+    },
     "bedTarget": "24:00",
     "availableMin": 600,
     "focusPeriod": "afternoon",
@@ -15,65 +18,735 @@
     "bedPrepTime": "23:30",
     "timerWarnMin": 120,
     "meals": [
-      { "label": "昼食", "start": "12:00", "min": 60 },
-      { "label": "夕食", "start": "19:00", "min": 60 }
+      {
+        "label": "昼食",
+        "start": "12:00",
+        "min": 60
+      },
+      {
+        "label": "夕食",
+        "start": "19:00",
+        "min": 60
+      }
     ],
     "breakEveryMin": 90,
     "breakMin": 10,
     "travelMinAroundFixed": 30,
     "shortcutName": "手帳アラーム",
     "gmailFrom": [],
-    "gmailKeywords": ["締切", "提出", "期限", "日程", "ご確認"],
+    "gmailKeywords": [
+      "締切",
+      "提出",
+      "期限",
+      "日程",
+      "ご確認"
+    ],
     "planSheetId": "",
     "planSheetName": "予定一覧",
     "timetableSheetName": "毎日の時間割",
     "appUrl": ""
   },
   "fixedEvents": [
-    { "weekday": 1, "start": "10:30", "end": "12:00", "title": "英語スピーキング" },
-    { "weekday": 2, "start": "14:45", "end": "16:15", "title": "ゼミ" }
+    {
+      "weekday": 1,
+      "start": "10:30",
+      "end": "12:00",
+      "title": "英語スピーキング"
+    },
+    {
+      "weekday": 2,
+      "start": "14:45",
+      "end": "16:15",
+      "title": "ゼミ"
+    }
   ],
   "templates": [
-    { "id": "nikkei", "title": "日経4ニュース【A】", "est": 20, "priority": 2, "order": 1 },
-    { "id": "eng", "title": "英語学習1講座【min】", "est": 60, "priority": 1, "order": 2 },
-    { "id": "gpt", "title": "ChatGPT英会話【A】", "est": 20, "priority": 3, "order": 3 }
+    {
+      "id": "nikkei",
+      "title": "日経4ニュース【A】",
+      "est": 20,
+      "priority": 2,
+      "order": 1
+    },
+    {
+      "id": "eng",
+      "title": "英語学習1講座【min】",
+      "est": 60,
+      "priority": 1,
+      "order": 2,
+      "active": false,
+      "note": "学習科目「英語講座」に置き換え"
+    },
+    {
+      "id": "gpt",
+      "title": "ChatGPT英会話【A】",
+      "est": 20,
+      "priority": 3,
+      "order": 3
+    }
   ],
   "subjects": [
     {
-      "id": "fp2", "name": "FP2級", "book": "みんなが欲しかったFP2級", "status": "active", "tag": "min", "priority": 1,
-      "examDate": "2027-01-24", "targetDate": null, "reviewDays": 0,
+      "id": "fp2",
+      "name": "FP2級",
+      "book": "みんなが欲しかったFP2級",
+      "status": "active",
+      "tag": "min",
+      "priority": 1,
+      "examDate": "2027-01-24",
+      "targetDate": null,
+      "reviewDays": 0,
       "structure": {
-        "outer": { "name": "CH", "format": "CH{n}" },
-        "inner": { "name": "Sec", "format": "Sec{n}" },
+        "outer": {
+          "name": "CH",
+          "format": "CH{n}"
+        },
+        "inner": {
+          "name": "Sec",
+          "format": "Sec{n}"
+        },
         "items": [
-          { "n": 3, "label": "金融資産運用", "secs": 10, "due": "2026-11-22" },
-          { "n": 4, "label": "タックスプランニング", "secs": 9, "due": "2026-12-06" },
-          { "n": 5, "label": "不動産", "secs": 6, "due": "2026-12-18" },
-          { "n": 6, "label": "相続・事業承継", "secs": 5, "due": "2027-01-03" },
-          { "n": 2, "label": "リスクマネジメント", "secs": 7, "due": "2027-01-10" },
-          { "n": 1, "label": "ライフプランニングと資金計画", "secs": 11, "due": "2027-01-19" }
+          {
+            "n": 3,
+            "label": "金融資産運用",
+            "secs": 10,
+            "due": "2026-11-22"
+          },
+          {
+            "n": 4,
+            "label": "タックスプランニング",
+            "secs": 9,
+            "due": "2026-12-06"
+          },
+          {
+            "n": 5,
+            "label": "不動産",
+            "secs": 6,
+            "due": "2026-12-18"
+          },
+          {
+            "n": 6,
+            "label": "相続・事業承継",
+            "secs": 5,
+            "due": "2027-01-03"
+          },
+          {
+            "n": 2,
+            "label": "リスクマネジメント",
+            "secs": 7,
+            "due": "2027-01-10"
+          },
+          {
+            "n": 1,
+            "label": "ライフプランニングと資金計画",
+            "secs": 11,
+            "due": "2027-01-19"
+          }
         ]
       },
-      "est": 45, "perDayMode": "auto", "perDay": 1, "maxPerDay": 3,
-      "studyDays": "weekdays", "offDays": ["2026-12-18", "2026-12-31", "2027-01-01"],
-      "milestones": [{ "when": "afterOuter", "key": "章末問題", "title": "{name} {outer} 章末問題", "est": 75 }],
-      "doneBefore": "CH4-Sec4", "planSync": true, "startedAt": "2026-11-13"
+      "est": 45,
+      "perDayMode": "auto",
+      "perDay": 1,
+      "maxPerDay": 3,
+      "studyDays": "weekdays",
+      "offDays": [
+        "2026-12-18",
+        "2026-12-31",
+        "2027-01-01"
+      ],
+      "milestones": [
+        {
+          "when": "afterOuter",
+          "key": "章末問題",
+          "title": "{name} {outer} 章末問題",
+          "est": 75
+        }
+      ],
+      "doneBefore": "CH4-Sec4",
+      "planSync": true,
+      "startedAt": "2026-11-13"
     },
     {
-      "id": "e4002", "name": "ビジネス英単語4002", "status": "active", "tag": "min", "priority": 1,
-      "examDate": null, "targetDate": null,
+      "id": "e4002",
+      "name": "ビジネス英単語4002",
+      "status": "active",
+      "tag": "min",
+      "priority": 1,
+      "examDate": null,
+      "targetDate": null,
       "structure": {
-        "outer": { "name": "Stage", "format": "Stage {n}", "count": 40 },
-        "inner": { "name": "パート", "labels": ["前半", "後半"] }
+        "outer": {
+          "name": "Stage",
+          "format": "Stage {n}",
+          "count": 40
+        },
+        "inner": {
+          "name": "パート",
+          "labels": [
+            "前半",
+            "後半"
+          ]
+        }
       },
-      "est": 30, "perDayMode": "fixed", "perDay": 1, "maxPerDay": 2,
-      "studyDays": "everyday", "offDays": [], "milestones": [],
-      "doneBefore": "Stage 12-前半", "planSync": false
+      "est": 30,
+      "perDayMode": "fixed",
+      "perDay": 1,
+      "maxPerDay": 2,
+      "studyDays": "everyday",
+      "offDays": [],
+      "milestones": [],
+      "doneBefore": "Stage 12-前半",
+      "planSync": false
+    },
+    {
+      "id": "eng",
+      "name": "英語講座",
+      "book": "みずほFG 内定者英語学習プログラム（東進ビジネススクール）",
+      "status": "active",
+      "tag": "min",
+      "priority": 1,
+      "examDate": null,
+      "targetDate": null,
+      "structure": {
+        "outer": {
+          "name": "STEP",
+          "format": "{n}"
+        },
+        "items": [
+          {
+            "n": "STEP1",
+            "due": "2026-11-30",
+            "units": [
+              {
+                "label": "英語学習法講座 第1回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第2回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第3回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第4回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第5回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第6回",
+                "est": 30
+              },
+              {
+                "label": "英語学習法講座 第7回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第1回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第2回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第3回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第4回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第5回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第6回",
+                "est": 30
+              },
+              {
+                "label": "リーダーシップコミュニケーション講座1 第7回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第1回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第2回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第3回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第4回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第5回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第6回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第7回",
+                "est": 30
+              },
+              {
+                "label": "英語発音上達講座 第8回",
+                "est": 30
+              }
+            ]
+          },
+          {
+            "n": "STEP2",
+            "due": "2027-01-31",
+            "units": [
+              {
+                "label": "ビジネス英語リスニング講座 第1回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第2回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第3回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第4回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第5回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第6回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第7回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第8回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第9回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第10回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第11回",
+                "est": 60
+              },
+              {
+                "label": "ビジネス英語リスニング講座 第12回",
+                "est": 60
+              }
+            ]
+          },
+          {
+            "n": "STEP3",
+            "due": "2027-03-31",
+            "units": [
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第1回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第1回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第2回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第2回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第3回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第4回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第3回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第5回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第6回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第4回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第7回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第8回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第5回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第9回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第10回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT準拠スピーキング講座 映像 第6回",
+                "est": 30
+              },
+              {
+                "label": "VERSANT オンライン英会話 第11回",
+                "est": 20
+              },
+              {
+                "label": "VERSANT オンライン英会話 第12回",
+                "est": 20
+              }
+            ]
+          }
+        ]
+      },
+      "est": 30,
+      "perDayMode": "fixed",
+      "perDay": 1,
+      "maxPerDay": 1,
+      "studyDays": "weekdays",
+      "offDays": [],
+      "milestones": [],
+      "doneBefore": "STEP1-英語発音上達講座 第7回",
+      "planSync": false,
+      "startedAt": "2026-10-24",
+      "memo": "1日1回分・順番どおり。リスニング講座は重いので午後。VERSANT は映像のあと間をあけずに英会話。前倒しは「次の単位を今日に追加」で。"
+    },
+    {
+      "id": "kinfre",
+      "name": "金フレ",
+      "book": "TOEIC L&R TEST 出る単特急 金のフレーズ",
+      "type": "srs",
+      "status": "active",
+      "tag": "min",
+      "priority": 1,
+      "blocks": [
+        {
+          "key": "1-100",
+          "label": "本編 1〜100",
+          "level": "600点",
+          "words": 100
+        },
+        {
+          "key": "101-200",
+          "label": "本編 101〜200",
+          "level": "600点",
+          "words": 100
+        },
+        {
+          "key": "201-300",
+          "label": "本編 201〜300",
+          "level": "600点",
+          "words": 100
+        },
+        {
+          "key": "301-400",
+          "label": "本編 301〜400",
+          "level": "600点",
+          "words": 100
+        },
+        {
+          "key": "sup1",
+          "label": "supplement1 パート1重要語",
+          "level": "",
+          "words": 100
+        },
+        {
+          "key": "401-500",
+          "label": "本編 401〜500",
+          "level": "730点",
+          "words": 100
+        },
+        {
+          "key": "501-600",
+          "label": "本編 501〜600",
+          "level": "730点",
+          "words": 100
+        },
+        {
+          "key": "601-700",
+          "label": "本編 601〜700",
+          "level": "730点",
+          "words": 100
+        },
+        {
+          "key": "sup2-3",
+          "label": "supplement2・3 部署名／前置詞など",
+          "level": "",
+          "words": 100
+        },
+        {
+          "key": "701-800",
+          "label": "本編 701〜800",
+          "level": "860点",
+          "words": 100
+        },
+        {
+          "key": "801-900",
+          "label": "本編 801〜900",
+          "level": "860点",
+          "words": 100
+        },
+        {
+          "key": "901-1000",
+          "label": "本編 901〜1000",
+          "level": "990点",
+          "words": 100
+        },
+        {
+          "key": "sup4",
+          "label": "supplement4 多義語",
+          "level": "",
+          "words": 100
+        },
+        {
+          "key": "sup5",
+          "label": "supplement5 定型表現",
+          "level": "",
+          "words": 120
+        }
+      ],
+      "round2Order": [
+        "301-400",
+        "sup1",
+        "401-500",
+        "501-600",
+        "601-700",
+        "sup2-3",
+        "701-800"
+      ],
+      "intervals": [
+        1,
+        3,
+        7,
+        14,
+        30
+      ],
+      "dailyBlocks": 2,
+      "maxBlocks": 3,
+      "maxMin": 40,
+      "minAll": 15,
+      "minX": 8,
+      "initial": {
+        "1-100": {
+          "count": 3,
+          "last": "2026-11-20",
+          "round2": true
+        },
+        "101-200": {
+          "count": 2,
+          "last": "2026-11-17",
+          "round2": true
+        },
+        "201-300": {
+          "count": 2,
+          "last": "2026-11-19",
+          "round2": true
+        },
+        "301-400": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "sup1": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "401-500": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "501-600": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "601-700": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "sup2-3": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "701-800": {
+          "count": 1,
+          "last": "2026-11-12",
+          "round2": false
+        },
+        "801-900": {
+          "count": 3,
+          "last": "2026-11-20",
+          "round2": true
+        },
+        "901-1000": {
+          "count": 3,
+          "last": "2026-11-20",
+          "round2": true
+        },
+        "sup4": {
+          "count": 3,
+          "last": "2026-11-20",
+          "round2": true
+        },
+        "sup5": {
+          "count": 2,
+          "last": "2026-11-17",
+          "round2": true
+        }
+      },
+      "initialAsOf": "2026-11-23",
+      "memo": "毎日必ず1件（忙しい日は×印中心で短く）。終わったら、やったブロックにチェックを付けて完了にする。"
+    },
+    {
+      "id": "biz",
+      "name": "ビジネス講座",
+      "status": "active",
+      "tag": "A",
+      "priority": 2,
+      "examDate": null,
+      "targetDate": null,
+      "structure": {
+        "outer": {
+          "name": "講座",
+          "format": "{n}",
+          "hideInTitle": true
+        },
+        "items": [
+          {
+            "n": "マナー",
+            "units": [
+              {
+                "label": "ビジネス実務・マナー講座 第1講"
+              },
+              {
+                "label": "ビジネス実務・マナー講座 第2講"
+              },
+              {
+                "label": "ビジネス実務・マナー講座 第3講"
+              },
+              {
+                "label": "ビジネス実務・マナー講座 第4講"
+              },
+              {
+                "label": "ビジネス実務・マナー講座 第5講"
+              }
+            ]
+          },
+          {
+            "n": "Office",
+            "units": [
+              {
+                "label": "Office入門講座 第1講"
+              },
+              {
+                "label": "Office入門講座 第2講"
+              },
+              {
+                "label": "Office入門講座 第3講"
+              },
+              {
+                "label": "Office入門講座 第4講"
+              }
+            ]
+          },
+          {
+            "n": "PM",
+            "units": [
+              {
+                "label": "プロジェクトマネジメント講座 第1講"
+              },
+              {
+                "label": "プロジェクトマネジメント講座 第2講"
+              },
+              {
+                "label": "プロジェクトマネジメント講座 第3講"
+              },
+              {
+                "label": "プロジェクトマネジメント講座 第4講"
+              },
+              {
+                "label": "プロジェクトマネジメント講座 第5講"
+              }
+            ]
+          }
+        ]
+      },
+      "est": 60,
+      "perDayMode": "fixed",
+      "perDay": 1,
+      "maxPerDay": 1,
+      "studyDays": "everyday",
+      "everyNDays": 2,
+      "offDays": [],
+      "milestones": [],
+      "startAfter": {
+        "subjectId": "eng",
+        "unitKey": "STEP1-英語発音上達講座 第8回"
+      },
+      "doneBefore": null,
+      "planSync": false,
+      "memo": "英語講座が STEP2 に入ったら 2 日に 1 回。順番：マナー → Office入門 → プロジェクトマネジメント"
     }
   ],
   "links": [
-    { "match": "英語講座", "template": "eng" },
-    { "match": "金フレ＋ChatGPT", "template": "gpt", "rest": "英語：金フレ" },
-    { "match": "FP2級 学習", "subject": "fp2" }
+    {
+      "match": "英語講座",
+      "subject": "eng"
+    },
+    {
+      "match": "金フレ＋ChatGPT",
+      "subject": "kinfre",
+      "template": "gpt"
+    },
+    {
+      "match": "FP2級 学習",
+      "subject": "fp2"
+    }
   ]
 }

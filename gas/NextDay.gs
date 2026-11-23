@@ -93,6 +93,13 @@ function prepareDay_(stores, dk, mode) {
     nd.start = pt.start; nd.fixedTime = true; nd.slotMin = pt.slotMin;
     putRec_(stores, 'task', pt.id, nd, false);
   }
+  for (var q = 0; q < (r.replace || []).length; q++) {
+    var rp = r.replace[q];
+    var cur = getRec_(stores, 'task', rp.id);
+    if (!cur || cur.deleted || (cur.data && (cur.data.done || (cur.data.sessions && cur.data.sessions.length)))) continue;
+    var rd = JSON.parse(JSON.stringify(rp)); delete rd.id;
+    putRec_(stores, 'task', rp.id, rd, false);
+  }
   var plan = r.plan; plan.builtAt = toIso(new Date()); plan.mode = mode;
   putRec_(stores, 'plan', dk, plan, false);
   return r;

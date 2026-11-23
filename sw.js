@@ -6,7 +6,7 @@ const FILES = [
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'src/app.js', 'src/actions.js', 'src/ui/styles.css',
   'src/core/dates.js', 'src/core/tasks.js', 'src/core/sleep.js', 'src/core/timer.js', 'src/core/carryover.js',
-  'src/core/stats.js', 'src/core/study.js', 'src/core/estimates.js', 'src/core/scheduler.js',
+  'src/core/stats.js', 'src/core/study.js', 'src/core/srs.js', 'src/core/estimates.js', 'src/core/scheduler.js',
   'src/core/planSheet.js', 'src/core/dayBuild.js', 'src/core/dateExtract.js',
   'src/model/importExport.js', 'src/model/records.js',
   'src/store/localDb.js', 'src/store/store.js', 'src/store/sync.js',

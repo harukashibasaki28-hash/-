@@ -51,6 +51,7 @@ async function boot() {
     await app.firstSync();
   } else {
     if (!store.meta.seeded) { await A.seedDefaults(store, defaults, rules); await store.setMeta('seeded', true); }
+    if (await A.applyMigrations(store, defaults)) await store.setMeta('lastDayStart', null);
     await app.checkDayStart();
   }
   app.render();
@@ -77,6 +78,7 @@ function makeApp(store, sync, defaultRules) {
     async firstSync() {
       await sync.sync();
       if (!store.meta.seeded) { await A.seedDefaults(store, store.defaults, defaultRules); await store.setMeta('seeded', true); }
+      if (await A.applyMigrations(store, store.defaults)) await store.setMeta('lastDayStart', null);
       await app.checkDayStart(true);
     },
 

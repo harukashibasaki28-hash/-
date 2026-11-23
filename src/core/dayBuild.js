@@ -3,10 +3,12 @@
 import { weekday, hmToMin, minToHm } from './dates.js';
 import { templateTasksFor, normalizeTask, tagOf } from './tasks.js';
 import { planStudyDay } from './study.js';
+import { planSrs } from './srs.js';
 import { planItemsForDate, timetableSlots, calendarItems } from './planSheet.js';
 
 // ctx: { templates, subjects, tasksAll, links, mode, planItems?, timetableRows?, calendarEvents? }
-// 返り値: { create: [新しいタスク], patch: [{id, start, fixedTime, slotMin}], studyKeep: {subjectId: keepIds}, plan }
+// 返り値: { create: [新しいタスク], patch: [{id, start, fixedTime, slotMin}], replace: [手を付けていない金フレのタスクの差し替え],
+//          studyKeep: {subjectId: keepIds}, plan }
 export function buildDay(dk, ctx) {
   const all = (ctx.tasksAll || []).filter((t) => !t.deleted);
   const onDay = all.filter((t) => t.date === dk);
@@ -18,8 +20,19 @@ export function buildDay(dk, ctx) {
   for (const t of templateTasksFor(dk, ctx.templates, onDay, weekday(dk))) add(t);
 
   const studyKeep = {};
+  const replace = [];
   for (const s of ctx.subjects || []) {
     if (s.status === 'finished') continue;
+    if (s.type === 'srs') {
+      const t = planSrs(s, all, dk, ctx.mode || 'actual');
+      if (!t) continue;
+      const cur = byId[t.id];
+      if (!cur) add(t);
+      else if (!cur.done && !cur.runningSince && !(cur.sessions && cur.sessions.length) && JSON.stringify(cur.srsBlocks) !== JSON.stringify(t.srsBlocks)) {
+        replace.push(Object.assign({}, cur, { title: t.title, est: t.est, srsBlocks: t.srsBlocks, srsWords: t.srsWords }));
+      }
+      continue;
+    }
     const p = planStudyDay(s, all.concat(create), dk, ctx.mode || 'actual');
     studyKeep[s.id] = p.keepIds;
     for (const t of p.generate) add(t);
@@ -50,20 +63,19 @@ export function buildDay(dk, ctx) {
         if (c) Object.assign(c, { start: p.start, fixedTime: true, slotMin: p.slotMin });
         else patch.push(p);
       };
-      if (link && link.template) {
-        const t = dayTasks.find((x) => x.templateId === link.template && !x.done);
+      if (link && (link.template || link.subject || link.rest)) {
+        // 順番：rest（枠の残り）→ 学習科目 → 毎日のタスク
+        const tpl = link.template ? dayTasks.find((x) => x.templateId === link.template && !x.done) : null;
+        const subj = link.subject ? dayTasks.filter((x) => x.subjectId === link.subject && !x.done) : [];
         if (link.rest) {
-          const restMin = Math.max(10, slot.min - ((t && t.est) || 0));
+          const used = ((tpl && tpl.est) || 0) + subj.reduce((a, t) => a + (t.est || 0), 0);
+          const restMin = Math.max(10, slot.min - used);
           const id = 'tt:' + dk + ':' + slot.key;
           add(normalizeTask({ id: id, title: link.rest, est: restMin, priority: 2, source: 'timetable' }, dk));
           place(create.find((x) => x.id === id) || byId[id], restMin);
         }
-        if (t) place(t, t.est || slot.min);
-        continue;
-      }
-      if (link && link.subject) {
-        const ts = dayTasks.filter((x) => x.subjectId === link.subject && !x.done);
-        for (const t of ts) place(t, t.est || 45);
+        for (const t of subj) place(t, t.est || 45);
+        if (tpl) place(tpl, tpl.est || slot.min);
         continue;
       }
       const id = 'tt:' + dk + ':' + slot.key;
@@ -78,7 +90,7 @@ export function buildDay(dk, ctx) {
     for (const g of ci.goals) if (!plan.goals.some((x) => x.title === g.title)) plan.goals.push(g);
   }
 
-  return { create: create, patch: patch, studyKeep: studyKeep, plan: plan };
+  return { create: create, patch: patch, replace: replace, studyKeep: studyKeep, plan: plan };
 }
 
 // 日付が変わってアプリを開いたとき、21:50 に作った学習タスクを実際の完了状況に合わせる

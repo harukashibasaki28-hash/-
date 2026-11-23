@@ -1,7 +1,7 @@
 // 学習科目：単位の展開・その日にやる分の決定・区切りタスク（章末問題など）・遅れ警告
 // 「どこまで終わったか」は学習タスクの完了記録から毎回計算する（位置を別に保存しない）。
 // GAS にも同梱される。import は同梱ファイル（dates.js / tasks.js）からのみ。
-import { addDays, weekday, formatMd } from './dates.js';
+import { addDays, weekday, formatMd, diffDays } from './dates.js';
 import { studyTaskId, normalizeTask, carriedOriginals } from './tasks.js';
 
 function fmt(format, n) { return String(format || '{n}').replace('{n}', n); }
@@ -18,13 +18,15 @@ export function outerItems(subject) {
 
 function innerCount(subject, item) {
   const inner = (subject.structure || {}).inner || {};
+  if (Array.isArray(item.units)) return item.units.length;
   if (item.secs != null) return Number(item.secs);
   if (Array.isArray(inner.labels)) return inner.labels.length;
   return Number(inner.count) || 1;
 }
 
-function innerKey(subject, j) {
+function innerKey(subject, j, item) {
   const inner = (subject.structure || {}).inner || {};
+  if (item && Array.isArray(item.units)) { const u = item.units[j - 1]; return typeof u === 'string' ? u : u.label; }
   if (Array.isArray(inner.labels)) return inner.labels[j - 1];
   return fmt(inner.format || 'Sec{n}', j);
 }
@@ -39,10 +41,11 @@ export function expandUnits(subject) {
     const outerTitle = item.label ? ok + ' ' + item.label : ok;
     const cnt = innerCount(subject, item);
     for (let j = 1; j <= cnt; j++) {
-      const ik = innerKey(subject, j);
+      const ik = innerKey(subject, j, item);
+      const u = Array.isArray(item.units) && typeof item.units[j - 1] === 'object' ? item.units[j - 1] : {};
       units.push({
         key: ok + '-' + ik, outerKey: ok, outerTitle: outerTitle, item: item, milestone: false,
-        title: subject.name + ' ' + outerTitle + ' ' + ik, est: subject.est || 30,
+        title: subject.name + ' ' + (st.outer && st.outer.hideInTitle ? '' : outerTitle + ' ') + ik, est: u.est || item.est || subject.est || 30,
       });
     }
     for (const ms of subject.milestones || []) {
@@ -107,9 +110,15 @@ export function unitStatus(subject, tasks, date, mode) {
 }
 
 // その日にやる「通常の単位」の数
-export function dailyQuota(subject, status, date) {
+export function dailyQuota(subject, status, date, tasks, mode) {
   if (subject.status === 'finished') return 0;
   if (!isStudyDay(subject, date)) return 0;
+  if (tasks && !started(subject, tasks, date, mode)) return 0;
+  if (tasks && subject.everyNDays > 1) {
+    let last = null;
+    for (const t of tasks) if (!t.deleted && t.subjectId === subject.id && t.date < date && (!last || t.date > last)) last = t.date;
+    if (last && diffDays(last, date) < subject.everyNDays) return 0;
+  }
   const remainingAll = status.filter((u) => !u.milestone && !u.done).length;
   if (!remainingAll) return 0;
   if (subject.perDayMode !== 'auto') return Math.min(Number(subject.perDay) || 1, remainingAll);
@@ -117,6 +126,19 @@ export function dailyQuota(subject, status, date) {
   let k = 1;
   for (const n of need) k = Math.max(k, n.perDay);
   return Math.min(k, Number(subject.maxPerDay) || 3, remainingAll);
+}
+
+// 開始の条件：startDate 以降、かつ startAfter の単位（別の科目でもよい）が前日までに終わっている
+export function started(subject, tasks, date, mode) {
+  if (subject.startDate && date < subject.startDate) return false;
+  const sa = subject.startAfter;
+  if (!sa || !sa.unitKey) return true;
+  for (const t of tasks || []) {
+    if (t.deleted || t.subjectId !== (sa.subjectId || subject.id) || t.unitKey !== sa.unitKey) continue;
+    if (t.done && (t.doneAt ? String(t.doneAt).slice(0, 10) : t.date) < date) return true;
+    if (mode === 'optimistic' && t.date < date) return true;
+  }
+  return !!sa.already;
 }
 
 // 期限ごとに「1 日あたり何単位必要か」
@@ -153,7 +175,7 @@ export function paceNeeds(subject, status, date) {
 export function planStudyDay(subject, tasks, date, mode) {
   if (subject.status === 'finished') return { quota: 0, carried: 0, generate: [], keepIds: {} };
   const status = unitStatus(subject, tasks, date, mode);
-  const quota = dailyQuota(subject, status, date);
+  const quota = dailyQuota(subject, status, date, tasks, mode);
   const carriedTasks = (tasks || []).filter((t) => !t.deleted && t.subjectId === subject.id && t.date === date && !t.done && t.carriedFrom);
   const carriedKeys = {};
   for (const t of carriedTasks) carriedKeys[t.unitKey] = true;
@@ -218,7 +240,8 @@ export function subjectProgress(subject, tasks, date) {
   if (remaining > 0 && subject.status !== 'finished') {
     // 1 日 normal 単位のペースで進んだ場合に終わる日
     let left = remaining, d = date, guard = 0;
-    while (left > 0 && guard++ < 2000) { if (isStudyDay(subject, d)) left -= normal; if (left > 0) d = addDays(d, 1); }
+    const step = subject.everyNDays > 1 ? subject.everyNDays : 1;
+    while (left > 0 && guard++ < 2000) { if (isStudyDay(subject, d)) { left -= normal; if (left > 0) d = addDays(d, step); } else d = addDays(d, 1); }
     projected = d;
   }
   const messages = [];
@@ -230,7 +253,7 @@ export function subjectProgress(subject, tasks, date) {
   return {
     total: regular.length, done: done, remaining: remaining, next: next, needs: needs,
     behind: behind.length > 0, messages: messages, actualMin: actualMin, projectedFinish: projected,
-    quotaToday: dailyQuota(subject, status, date),
+    quotaToday: dailyQuota(subject, status, date, tasks, 'actual'),
     units: status,
   };
 }
