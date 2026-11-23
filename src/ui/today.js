@@ -69,7 +69,7 @@ function btn(act, label, enabled) {
 }
 
 // 日課（毎日のタスク・学習科目・金フレ・時間割）と、それ以外に分け、それ以外のうち優先度「高」・締切が近いものを一番上に
-const ROUTINE = { template: true, study: true, srs: true, timetable: true };
+const ROUTINE = { template: true, study: true, srs: true, timetable: true, daily: true, sheet: true }; // daily・sheet は前の手帳から移した日課
 export function groupTasks(tasks, dk) {
   const soon = addDays(dk, 2);
   const priority = [], routine = [], other = [];
