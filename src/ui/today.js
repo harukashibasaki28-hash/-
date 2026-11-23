@@ -42,8 +42,13 @@ export function render(app) {
   const tasks = (day.tasks || []).filter((t) => !t.deleted);
   const c = dayCompletion(tasks);
   const mn = minAchievement(tasks);
-  out.push('<section class="card"><div class="row-between"><h2>今日のタスク</h2><span class="muted">' + c.done + '/' + c.planned + ' 完了・【min】' + mn.done + '/' + mn.total + '</span></div>');
-  out.push('<ul class="tasks">' + tasks.map((t) => taskRow(t, now)).join('') + '</ul>');
+  const g = groupTasks(tasks, dk);
+  if (g.priority.length) {
+    out.push('<section class="card priority"><h2>❗ 優先のやること</h2><ul class="tasks">' + g.priority.map((t) => taskRow(t, now)).join('') + '</ul></section>');
+  }
+  out.push('<section class="card"><div class="row-between"><h2>毎日の日課</h2><span class="muted">' + c.done + '/' + c.planned + ' 完了・【min】' + mn.done + '/' + mn.total + '</span></div>');
+  out.push('<ul class="tasks">' + (g.routine.map((t) => taskRow(t, now)).join('') || '<li class="muted">ありません</li>') + '</ul>');
+  if (g.other.length) out.push('<h3>その他のやること</h3><ul class="tasks">' + g.other.map((t) => taskRow(t, now)).join('') + '</ul>');
   out.push('<button class="primary wide" data-act="addTask" data-date="' + dk + '">＋ タスクを追加</button>');
   out.push('</section>');
 
@@ -61,6 +66,20 @@ export function render(app) {
 
 function btn(act, label, enabled) {
   return '<button class="big" data-act="' + act + '"' + (enabled ? '' : ' disabled') + '>' + label + '</button>';
+}
+
+// 日課（毎日のタスク・学習科目・金フレ・時間割）と、それ以外に分け、それ以外のうち優先度「高」・締切が近いものを一番上に
+const ROUTINE = { template: true, study: true, srs: true, timetable: true };
+export function groupTasks(tasks, dk) {
+  const soon = addDays(dk, 2);
+  const priority = [], routine = [], other = [];
+  for (const t of tasks) {
+    if (ROUTINE[t.source]) routine.push(t);
+    else if (!t.done && (t.priority === 1 || (t.deadline && t.deadline <= soon))) priority.push(t);
+    else other.push(t);
+  }
+  priority.sort((a, b) => ((a.deadline || '9') < (b.deadline || '9') ? -1 : (a.deadline || '9') > (b.deadline || '9') ? 1 : 0));
+  return { priority, routine, other };
 }
 
 function taskRow(t, now) {
@@ -156,7 +175,11 @@ export const acts = {
     if (r.error) return app.toast(r.error);
     app.toast('昼寝 ' + fmtMin(r.nap.min));
   },
-  async toggle(app, el) { await A.toggleDone(app.store, el.dataset.id, el.checked, app.now()); },
+  async toggle(app, el) {
+    const t = app.store.view.allTasks.find((x) => x.id === el.dataset.id);
+    if (t && t.srsBlocks && el.checked) { el.checked = false; return srsDoneForm(app, t); }
+    await A.toggleDone(app.store, el.dataset.id, el.checked, app.now());
+  },
   async start(app, el) { await A.startTimer(app.store, el.dataset.id, app.now()); },
   async stop(app, el) { await A.stopTimer(app.store, el.dataset.id, app.now()); },
   async stopCap(app, el) {
@@ -230,5 +253,19 @@ function sleepForm(app, dk) {
     const newNaps = [];
     naps.forEach((n, i) => { if (!f['napDel' + i]) newNaps.push(recalcNap({ start: localInputToIso(f['napStart' + i]), end: localInputToIso(f['napEnd' + i]), min: n.min })); });
     await A.saveDayFields(app.store, dk, { sleep, naps: newNaps });
+  });
+}
+
+// 金フレの完了：実際にやったブロックを選ぶ（学習回数と最後の日に記録される）
+function srsDoneForm(app, t) {
+  app.modal('<h2>金フレ：やったブロック</h2><form>' + t.srsBlocks.map((b, i) => {
+    const s = app.store.view.subjects.find((x) => x.id === t.subjectId);
+    const blk = s && (s.blocks || []).find((x) => x.key === b.key);
+    return '<label class="check block-check"><input type="checkbox" name="b' + i + '" checked> ' + esc(blk ? blk.label : b.key) + (b.mode === 'x' ? '（×印中心）' : '（全語）') + '</label>';
+  }).join('') + '<p class="muted small">やらなかったブロックはチェックを外してください。次の日以降にまた選ばれます。</p><button class="primary wide">完了にする</button></form>', async (f) => {
+    const keys = t.srsBlocks.filter((b, i) => f['b' + i]).map((b) => b.key);
+    if (!keys.length) return app.toast('ブロックを 1 つ以上選んでください');
+    await A.updateTask(app.store, t.id, { srsDone: keys });
+    await A.toggleDone(app.store, t.id, true, app.now());
   });
 }

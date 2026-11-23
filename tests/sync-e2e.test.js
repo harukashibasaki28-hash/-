@@ -139,3 +139,23 @@ test('オフラインで繰越したあと、別の端末で元が完了にな�
   assert.equal(phone.store.view.allTasks.find((x) => x.id === t.id).done, true, '別端末の完了は上書きされない');
   assert.ok(!(phone.store.view.days['2026-11-24'] || { tasks: [] }).tasks.some((x) => x.id === t.id + '@2026-11-24'));
 });
+
+test('すでに使い始めたデータにも、英語講座・金フレ・ビジネス講座が自動で入る（1回だけ）', async () => {
+  const srv = server();
+  const phone = await device(srv, true);
+  const old = JSON.parse(JSON.stringify(defaults));
+  old.subjects = old.subjects.filter((s) => ['fp2', 'e4002'].includes(s.id));
+  old.templates = old.templates.map((t) => Object.assign({}, t, { active: true }));
+  old.links = [{ match: '英語講座', template: 'eng' }];
+  await A.seedDefaults(phone.store, old, rules);
+  await A.runDayStart(phone.store, '2026-11-23', at('2026-11-23T07:00:00+09:00'));
+  assert.ok(phone.store.view.allTasks.some((t) => t.id === 'tpl:eng:2026-11-23'));
+  assert.equal(await A.applyMigrations(phone.store, defaults), 1);
+  assert.equal(await A.applyMigrations(phone.store, defaults), 0, '2回目は何もしない');
+  await A.runDayStart(phone.store, '2026-11-23', at('2026-11-23T07:00:00+09:00'));
+  const ids = phone.store.view.days['2026-11-23'].tasks.map((t) => t.id);
+  assert.ok(!ids.includes('tpl:eng:2026-11-23'), '英語学習1講座は置き換え');
+  assert.ok(ids.includes('stu:eng:STEP1-英語発音上達講座 第8回'));
+  assert.ok(ids.includes('srs:kinfre:2026-11-23'));
+  assert.equal(phone.store.view.templates.find((t) => t.id === 'eng').active, false);
+});

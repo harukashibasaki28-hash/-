@@ -29,6 +29,47 @@ export async function seedDefaults(store, defaults, rules) {
   return items.length;
 }
 
+// ── 設定の更新（すでに使い始めた端末・スプレッドシートにも、新しい科目などを足す）──
+const MIGRATIONS = [
+  {
+    id: '2026-11-23-english-kinfre-biz',
+    run(store, defaults) {
+      const items = [];
+      for (const id of ['eng', 'kinfre', 'biz']) {
+        const def = defaults.subjects.find((x) => x.id === id);
+        if (def && !store.get('subj', id)) items.push({ kind: 'subj', id, data: strip(def) });
+      }
+      const eng = store.get('tpl', 'eng');
+      if (eng && eng.data.active !== false) items.push({ kind: 'tpl', id: 'eng', data: Object.assign({}, eng.data, { active: false, note: '学習科目「英語講座」に置き換え' }) });
+      const links = store.get('cfg', 'links');
+      const cur = links ? links.data.value : null;
+      if (!cur || !cur.some((l) => l.subject === 'eng')) items.push({ kind: 'cfg', id: 'links', data: { value: defaults.links } });
+      // まだ手を付けていない「英語学習1講座」「英語：金フレ」のタスクは、新しい科目のタスクに置き換えるので消す
+      for (const t of store.view.allTasks) {
+        if (t.done || t.runningSince || (t.sessions && t.sessions.length)) continue;
+        if (t.templateId === 'eng' || (t.source === 'timetable' && t.title === '英語：金フレ')) items.push({ kind: 'task', id: t.id, data: strip(t), deleted: true });
+      }
+      return items;
+    },
+  },
+];
+
+export async function applyMigrations(store, defaults) {
+  const doneRec = store.get('cfg', 'migrations');
+  const done = (doneRec && doneRec.data.value) || [];
+  const items = [];
+  const ran = [];
+  for (const m of MIGRATIONS) {
+    if (done.indexOf(m.id) >= 0) continue;
+    for (const it of m.run(store, defaults)) items.push(it);
+    ran.push(m.id);
+  }
+  if (!ran.length) return 0;
+  items.push({ kind: 'cfg', id: 'migrations', data: { value: done.concat(ran) } });
+  await store.putMany(items);
+  return ran.length;
+}
+
 // ── 日付が変わったとき ──
 // ①繰越 ②閉じた日のルール（見積もり自動増）③毎日のタスク・学習を追加 ④21:50 に作った学習タスクを実際に合わせる
 export async function runDayStart(store, dk, now) {
@@ -48,6 +89,7 @@ export async function runDayStart(store, dk, now) {
   const v2 = store.view;
   const r = buildDay(dk, { templates: v2.templates, subjects: v2.subjects, tasksAll: v2.allTasks, links: v2.links, mode: 'actual' });
   const more = r.create.map((t) => ({ kind: 'task', id: t.id, data: strip(t) }));
+  for (const t of r.replace) more.push({ kind: 'task', id: t.id, data: strip(t) });
   const all = v2.allTasks.concat(r.create);
   for (const id of studyTasksToRemove(dk, all, r.studyKeep)) {
     const rec = store.get('task', id);

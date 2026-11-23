@@ -18,10 +18,15 @@ function subtract(intervals, s, e) {
 
 function roundUp5(x) { return Math.ceil(x / 5) * 5; }
 
+// 入りきらないとき、【min】・必ず入れるもの（金フレ）を先に、【A】【任意】を後に
+const TAG_RANK = { min: 0, A: 2, '任意': 3 };
 export function sortForSchedule(a, b) {
+  if (!!a.mustKeep !== !!b.mustKeep) return a.mustKeep ? -1 : 1;
   const da = a.deadline || '9999', db = b.deadline || '9999';
   if (da !== db) return da < db ? -1 : 1;
   if ((a.priority || 2) !== (b.priority || 2)) return (a.priority || 2) - (b.priority || 2);
+  const ra = TAG_RANK[a.tag] == null ? 1 : TAG_RANK[a.tag], rb = TAG_RANK[b.tag] == null ? 1 : TAG_RANK[b.tag];
+  if (ra !== rb) return ra - rb;
   if ((a.carryCount || 0) !== (b.carryCount || 0)) return (b.carryCount || 0) - (a.carryCount || 0);
   return (b.est || 0) - (a.est || 0);
 }

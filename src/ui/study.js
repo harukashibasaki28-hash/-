@@ -1,6 +1,7 @@
 // 「学習」画面：科目の進み具合・遅れ警告・追加/編集/終了・終了した科目の記録
 import { esc, fmtMin } from './util.js';
-import { formatMd } from '../core/dates.js';
+import { formatMd, addDays } from '../core/dates.js';
+import { srsOverview, planSrs } from '../core/srs.js';
 import { subjectProgress, expandUnits } from '../core/study.js';
 import * as A from '../actions.js';
 
@@ -10,7 +11,7 @@ export function render(app) {
   const active = v.subjects.filter((s) => s.status !== 'finished');
   const finished = v.subjects.filter((s) => s.status === 'finished');
   const out = [];
-  for (const s of active) out.push(card(app, s, dk));
+  for (const s of active) out.push(s.type === 'srs' ? srsCard(app, s, dk) : card(app, s, dk));
   out.push('<button class="primary wide" data-act="subjEdit">＋ 科目を追加</button>');
   if (finished.length) {
     out.push('<section class="card"><h2>終了した科目</h2>');
@@ -31,6 +32,7 @@ function card(app, s, dk) {
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
   const out = ['<section class="card subject"><div class="row-between"><h2>' + esc(s.name) + ' <span class="chip ' + (s.tag === 'min' ? 'chip-min' : 'chip-a') + '">' + esc(s.tag || 'min') + '</span></h2>' +
     '<button class="ghost" data-act="subjEdit" data-id="' + esc(s.id) + '">編集</button></div>'];
+  if (s.memo) out.push('<div class="memo">' + esc(s.memo) + '</div>');
   out.push('<div class="progress" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><div style="width:' + pct + '%"></div></div>');
   out.push('<p>' + p.done + ' / ' + p.total + ' 単位（' + pct + '%）・実績 ' + fmtMin(p.actualMin) + '</p>');
   out.push('<p>次：<b>' + (p.next ? esc(p.next.title) : 'すべて完了') + '</b>　今日の量：' + p.quotaToday + ' 単位' + (s.perDayMode === 'auto' ? '（期限から自動）' : '') + '</p>');
@@ -53,7 +55,7 @@ function card(app, s, dk) {
 
 function itemsToText(s) {
   const items = (s.structure && s.structure.items) || [];
-  return items.map((i) => [i.n, i.label || '', i.secs != null ? i.secs : '', i.due || ''].join(', ')).join('\n');
+  return items.map((i) => [i.n, i.label || '', Array.isArray(i.units) ? i.units.length : i.secs != null ? i.secs : '', i.due || ''].join(', ')).join('\n');
 }
 
 function textToItems(text) {
@@ -101,13 +103,15 @@ export function subjectForm(app, s) {
     '<label>ここまで終わっている（使い始める前の分）<select name="doneBefore"><option value="">なし（最初から）</option>' + units.map((u) => '<option value="' + esc(u.key) + '"' + (s.doneBefore === u.key ? ' selected' : '') + '>' + esc(u.title) + '</option>').join('') + '</select></label>' +
     '<label class="check"><input type="checkbox" name="planSync"' + (s.planSync ? ' checked' : '') + '> 学習計画シートの「' + esc(s.name || '科目名') + '：○○」の進捗を書き戻す</label>' +
     '<button class="primary wide">保存</button></form>', async (f) => {
-    const isLabels = f.inner.indexOf('{n}') < 0;
+    const fixedList = (st.items || []).some((i) => Array.isArray(i.units));
+    const isLabels = !fixedList && f.inner.indexOf('{n}') < 0;
     const items = textToItems(f.items);
     const structure = {
       outer: Object.assign({}, st.outer || {}, { format: f.outerFormat || '{n}', count: f.outerCount || undefined }),
       inner: isLabels ? { name: inner.name || '', labels: f.inner.split(/[,，、]/).map((x) => x.trim()).filter(Boolean) } : { name: inner.name || '', format: f.inner, count: f.innerCount || 1 },
     };
     if (items.length) structure.items = items;
+    if (fixedList) { structure.outer = st.outer; structure.inner = st.inner; structure.items = (st.items || []).map((it) => { const e = items.find((x) => String(x.n) === String(it.n)); return Object.assign({}, it, e && e.due ? { due: e.due } : {}); }); }
     const subject = Object.assign({}, s, {
       name: f.name.trim(), tag: f.tag, status: f.status, examDate: f.examDate || null, targetDate: f.targetDate || null,
       structure, perDayMode: f.perDayMode, perDay: f.perDay || 1, maxPerDay: f.maxPerDay || 3, est: f.est || 30, studyDays: f.studyDays,
@@ -121,7 +125,40 @@ export function subjectForm(app, s) {
   });
 }
 
+const SRS_STATUS = { ok: '済', due: '今日', late: '遅れ', todo: 'まだ' };
+
+function srsCard(app, s, dk) {
+  const v = app.store.view;
+  const rows = srsOverview(s, v.allTasks, dk);
+  const todayTask = v.allTasks.find((t) => t.id === 'srs:' + s.id + ':' + dk);
+  const plan = todayTask || planSrs(s, v.allTasks, dk, 'actual');
+  const left = (s.round2Order || []).filter((k) => { const r = rows.find((x) => x.key === k); return r && !r.round2; });
+  const out = ['<section class="card subject"><div class="row-between"><h2>' + esc(s.name) + ' <span class="chip chip-min">' + esc(s.tag || 'min') + '</span></h2>' +
+    '<button class="ghost" data-act="srsEdit" data-id="' + esc(s.id) + '">学習回数を直す</button></div>'];
+  if (s.memo) out.push('<div class="memo">' + esc(s.memo) + '</div>');
+  out.push('<p>今日：<b>' + (plan ? esc(plan.title.replace(/【[^】]*】/g, '')) : 'なし') + '</b>' + (plan ? '（約' + (plan.srsWords || '') + '語・' + plan.est + '分）' : '') + (todayTask && todayTask.done ? ' ✓' : '') + '</p>');
+  out.push('<p class="muted small">2周目の残り：' + (left.length ? left.map((k) => esc(rows.find((x) => x.key === k).label)).join(' → ') : 'なし（全ブロック済）') + '</p>');
+  out.push('<div class="table-wrap"><table class="srs"><tr><th>ブロック</th><th>回数</th><th>次にやること</th></tr>' + rows.map((r) =>
+    '<tr class="' + r.status + '"><td>' + esc(r.label) + (r.level ? '<br><small class="muted">' + esc(r.level) + '</small>' : '') + '</td><td>' + r.count + '回' + (r.round2 ? '' : '<br><small class="muted">2周目まだ</small>') + '</td><td>' + esc(r.next) + '</td></tr>').join('') + '</table></div>');
+  out.push('<p class="muted small">復習の間隔（最後に学習した日から）：' + (s.intervals || [1, 3, 7, 14, 30]).map((d, i) => (i + 1) + (i === 4 ? '回以上' : '回') + '→' + d + '日後').join('・') + '</p>');
+  out.push('</section>');
+  return out.join('');
+}
+
+function srsForm(app, s) {
+  const rows = srsOverview(s, app.store.view.allTasks, app.today());
+  app.modal('<h2>' + esc(s.name) + '：学習回数を直す</h2><p class="muted small">今日の分まで含めた、今の状態を入力してください。</p><form><div class="table-wrap"><table class="srs"><tr><th>ブロック</th><th>回数</th><th>最後の日</th><th>2周目済</th></tr>' +
+    rows.map((r, i) => '<tr><td>' + esc(r.label) + '</td><td><input type="number" min="0" name="c' + i + '" value="' + r.count + '" style="width:64px"></td><td><input type="date" name="l' + i + '" value="' + esc(r.last || '') + '"></td><td><input type="checkbox" name="r' + i + '"' + (r.round2 ? ' checked' : '') + '></td></tr>').join('') +
+    '</table></div><button class="primary wide">保存</button></form>', async (f) => {
+    const initial = {};
+    rows.forEach((r, i) => { initial[r.key] = { count: f['c' + i] || 0, last: f['l' + i] || null, round2: !!f['r' + i] }; });
+    await A.saveSubject(app.store, Object.assign({}, s, { initial, initialAsOf: addDays(app.today(), 1) }));
+    app.toast('保存しました');
+  });
+}
+
 export const acts = {
+  srsEdit(app, el) { srsForm(app, app.store.view.subjects.find((x) => x.id === el.dataset.id)); },
   subjEdit(app, el) { subjectForm(app, el.dataset.id ? app.store.view.subjects.find((s) => s.id === el.dataset.id) : null); },
   async subjNext(app, el) {
     const t = await A.addNextStudyUnit(app.store, el.dataset.id, app.today());
