@@ -183,3 +183,10 @@ table.srs tr.late td { background: var(--warn-bg); }
 table.srs tr.due td { background: var(--info-bg); }
 table.srs tr.ok td:first-child { color: var(--ok); }
 .memo { font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+
+.achieve-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.achieve-num { font-size: 30px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.achieve-num small { font-size: 15px; font-weight: 600; color: var(--muted); }
+.achieve-num.ok { color: var(--ok); }
+.progress.min div { background: var(--min); }
+.card.achieve p { margin: 8px 0 0; }

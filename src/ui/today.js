@@ -1,4 +1,4 @@
-// 「今日」画面：睡眠ボタン・お知らせ・タスク・確認候補
+// 「今日」画面：達成度・お知らせ・優先のやること・日課・確認候補・睡眠（一番下）
 import { esc, fmtMin, fmtTime, tagChip, PRIORITY, isoToLocalInput, localInputToIso } from './util.js';
 import { formatMd, addDays, minOfDay, hmToMin, atTime, parseIso, toIso, weekday } from '../core/dates.js';
 import { runningMinutes, overdueTimers, capTime } from '../core/timer.js';
@@ -17,20 +17,10 @@ export function render(app) {
   const st = v.state || {};
   const out = [];
 
-  out.push('<section class="card sleep">');
-  out.push('<div class="sleep-buttons">' +
-    btn('sleep', '🌙 寝る', !st.sleepingSince && !st.nappingSince) +
-    btn('wake', '☀️ 起きた', !!st.sleepingSince) +
-    btn('nap', '😴 昼寝する', !st.sleepingSince && !st.nappingSince) +
-    btn('napEnd', '⏰ 昼寝から起きた', !!st.nappingSince) + '</div>');
-  if (st.sleepingSince) out.push('<p class="status-line">睡眠中（' + fmtTime(st.sleepingSince) + '〜）</p>');
-  if (st.nappingSince) out.push('<p class="status-line">昼寝中（' + fmtTime(st.nappingSince) + '〜、' + fmtMin(Math.round((now - parseIso(st.nappingSince)) / 60000)) + '）</p>');
-  const ns = napSummary(day.naps);
-  out.push('<p class="sleep-summary">' +
-    (day.sleep ? '昨夜 ' + fmtTime(day.sleep.bed) + '→' + fmtTime(day.sleep.wake) + '　<b>' + fmtMin(day.sleep.min) + '</b>' : '今朝の睡眠は未記録') +
-    (ns.count ? '　昼寝 ' + ns.count + '回 ' + fmtMin(ns.totalMin) : '') +
-    ' <button class="link" data-act="editSleep" data-date="' + dk + '">修正</button></p>');
-  out.push('</section>');
+  const tasks = (day.tasks || []).filter((t) => !t.deleted);
+  const c = dayCompletion(tasks);
+  const mn = minAchievement(tasks);
+  out.push(progressCard(tasks, c, mn, st, now));
 
   out.push(alerts(app, dk, now, day));
 
@@ -39,14 +29,11 @@ export function render(app) {
     out.push('<section class="goals">' + plan.goals.map((g) => '<span class="goal">🎯 ' + esc(g.title) + (g.to ? '<small>〜' + formatMd(g.to) + '</small>' : '') + '</span>').join('') + '</section>');
   }
 
-  const tasks = (day.tasks || []).filter((t) => !t.deleted);
-  const c = dayCompletion(tasks);
-  const mn = minAchievement(tasks);
   const g = groupTasks(tasks, dk);
   if (g.priority.length) {
     out.push('<section class="card priority"><h2>❗ 優先のやること</h2><ul class="tasks">' + g.priority.map((t) => taskRow(t, now)).join('') + '</ul></section>');
   }
-  out.push('<section class="card"><div class="row-between"><h2>毎日の日課</h2><span class="muted">' + c.done + '/' + c.planned + ' 完了・【min】' + mn.done + '/' + mn.total + '</span></div>');
+  out.push('<section class="card"><div class="row-between"><h2>毎日の日課</h2><span class="muted">' + g.routine.filter((t) => t.done).length + '/' + g.routine.length + ' 完了</span></div>');
   out.push('<ul class="tasks">' + (g.routine.map((t) => taskRow(t, now)).join('') || '<li class="muted">ありません</li>') + '</ul>');
   if (g.other.length) out.push('<h3>その他のやること</h3><ul class="tasks">' + g.other.map((t) => taskRow(t, now)).join('') + '</ul>');
   out.push('<button class="primary wide" data-act="addTask" data-date="' + dk + '">＋ タスクを追加</button>');
@@ -61,6 +48,40 @@ export function render(app) {
       ((m.dates && m.dates.length) ? '<div class="small">締切の候補: ' + m.dates.map((d) => '<span class="chip">' + formatMd(d.date) + '</span>').join(' ') + '</div>' : '') +
       '<div class="actions"><button data-act="inboxTask" data-id="' + esc(m.id) + '">タスクにする</button><button data-act="inboxHou" data-id="' + esc(m.id) + '">報連相へ</button><button class="ghost" data-act="inboxIgnore" data-id="' + esc(m.id) + '">無視</button></div></li>').join('') + '</ul></section>');
   }
+
+  out.push('<section class="card sleep"><h2>睡眠</h2>');
+  out.push('<div class="sleep-buttons">' +
+    btn('sleep', '🌙 寝る', !st.sleepingSince && !st.nappingSince) +
+    btn('wake', '☀️ 起きた', !!st.sleepingSince) +
+    btn('nap', '😴 昼寝する', !st.sleepingSince && !st.nappingSince) +
+    btn('napEnd', '⏰ 昼寝から起きた', !!st.nappingSince) + '</div>');
+  if (st.sleepingSince) out.push('<p class="status-line">睡眠中（' + fmtTime(st.sleepingSince) + '〜）</p>');
+  if (st.nappingSince) out.push('<p class="status-line">昼寝中（' + fmtTime(st.nappingSince) + '〜、' + fmtMin(Math.round((now - parseIso(st.nappingSince)) / 60000)) + '）</p>');
+  const ns = napSummary(day.naps);
+  out.push('<p class="sleep-summary">' +
+    (day.sleep ? '昨夜 ' + fmtTime(day.sleep.bed) + '→' + fmtTime(day.sleep.wake) + '　<b>' + fmtMin(day.sleep.min) + '</b>' : '今朝の睡眠は未記録') +
+    (ns.count ? '　昼寝 ' + ns.count + '回 ' + fmtMin(ns.totalMin) : '') +
+    ' <button class="link" data-act="editSleep" data-date="' + dk + '">修正</button></p>');
+  out.push('</section>');
+
+  return out.join('');
+}
+
+// 一番上：今日の達成度
+function progressCard(tasks, c, mn, st, now) {
+  const pct = c.rate == null ? 0 : Math.round(c.rate * 100);
+  const mpct = mn.total ? Math.round((mn.done / mn.total) * 100) : 0;
+  let actual = 0;
+  for (const t of tasks) actual += (t.actualMin || 0) + (t.runningSince ? runningMinutes(t, now) : 0);
+  const out = ['<section class="card achieve"><h2>今日の達成度</h2><div class="achieve-grid">'];
+  out.push('<div><div class="achieve-num">' + pct + '<small>%</small></div><div class="muted small">完了 ' + c.done + ' / ' + c.planned + '</div>' +
+    '<div class="progress"><div style="width:' + pct + '%"></div></div></div>');
+  out.push('<div><div class="achieve-num' + (mn.total && mn.done === mn.total ? ' ok' : '') + '">' + mn.done + '<small> / ' + mn.total + '</small></div><div class="muted small">【min】' + (mn.total && mn.done === mn.total ? ' 達成 ✓' : 'の達成') + '</div>' +
+    '<div class="progress min"><div style="width:' + mpct + '%"></div></div></div>');
+  out.push('</div><p class="muted small">今日の実績 ' + fmtMin(actual) + '</p>');
+  if (st.sleepingSince) out.push('<p class="status-line">🌙 睡眠中（' + fmtTime(st.sleepingSince) + '〜）→ 一番下の「起きた」</p>');
+  if (st.nappingSince) out.push('<p class="status-line">😴 昼寝中（' + fmtTime(st.nappingSince) + '〜）→ 一番下の「昼寝から起きた」</p>');
+  out.push('</section>');
   return out.join('');
 }
 
