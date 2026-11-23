@@ -9,6 +9,7 @@ import { nextUnit, unitStatus } from './core/study.js';
 import { evaluateRules } from './analysis/ruleEngine.js';
 import { computeRatios } from './core/estimates.js';
 import { importToRecords, dayData } from './model/records.js';
+import { legacyDuplicates } from './core/legacy.js';
 
 const OLD = '2000-01-01T00:00:00+09:00'; // 初期データは古い日時にして、サーバーにあるデータを優先させる
 
@@ -101,6 +102,18 @@ export async function runDayStart(store, dk, now) {
 }
 
 function strip(t) { const o = Object.assign({}, t); delete o.id; return o; }
+
+// 前の手帳から移した日課と、アプリの日課が同じ日に二重になったら、手を付けていない前の手帳の分を片付ける
+export async function cleanupLegacy(store, dk) {
+  const v = store.view;
+  const items = [];
+  for (const id of legacyDuplicates(v.allTasks, dk)) {
+    const rec = store.get('task', id);
+    if (rec) items.push({ kind: 'task', id, data: rec.data, deleted: true });
+  }
+  if (items.length) await store.putMany(items);
+  return items.length;
+}
 
 // オフライン中に繰越したあと、別の端末で元のタスクが完了になっていたら、手を付けていない繰越コピーを消す
 export async function cleanupCarried(store, dk) {

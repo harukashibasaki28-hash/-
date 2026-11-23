@@ -97,6 +97,8 @@ function makeApp(store, sync, defaultRules) {
           const res = await sync.sync({ prepare: dk });
           if (res.ok) await store.setMeta('preparedDate', dk);
         }
+        // 時間割の日課は GAS から届くので、受け取ったあとに二重分を片付ける
+        await A.cleanupLegacy(store, dk);
       })().finally(() => { dayStartRunning = null; });
       return dayStartRunning;
     },
