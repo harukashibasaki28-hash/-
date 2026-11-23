@@ -1,0 +1,79 @@
+{
+  "settings": {
+    "wakeTarget": { "from": "05:00", "to": "07:00" },
+    "bedTarget": "24:00",
+    "availableMin": 600,
+    "focusPeriod": "afternoon",
+    "dayStartsAt": "00:00",
+    "planStart": "07:00",
+    "planEnd": "23:30",
+    "bufferRatio": 0.25,
+    "defaultEstFactor": 1.3,
+    "sleepAlarm": "06:00",
+    "napAlarmMin": 20,
+    "minCheckTime": "23:00",
+    "bedPrepTime": "23:30",
+    "timerWarnMin": 120,
+    "meals": [
+      { "label": "昼食", "start": "12:00", "min": 60 },
+      { "label": "夕食", "start": "19:00", "min": 60 }
+    ],
+    "breakEveryMin": 90,
+    "breakMin": 10,
+    "travelMinAroundFixed": 30,
+    "shortcutName": "手帳アラーム",
+    "gmailFrom": [],
+    "gmailKeywords": ["締切", "提出", "期限", "日程", "ご確認"],
+    "planSheetId": "",
+    "planSheetName": "予定一覧",
+    "timetableSheetName": "毎日の時間割",
+    "appUrl": ""
+  },
+  "fixedEvents": [
+    { "weekday": 1, "start": "10:30", "end": "12:00", "title": "英語スピーキング" },
+    { "weekday": 2, "start": "14:45", "end": "16:15", "title": "ゼミ" }
+  ],
+  "templates": [
+    { "id": "nikkei", "title": "日経4ニュース【A】", "est": 20, "priority": 2, "order": 1 },
+    { "id": "eng", "title": "英語学習1講座【min】", "est": 60, "priority": 1, "order": 2 },
+    { "id": "gpt", "title": "ChatGPT英会話【A】", "est": 20, "priority": 3, "order": 3 }
+  ],
+  "subjects": [
+    {
+      "id": "fp2", "name": "FP2級", "book": "みんなが欲しかったFP2級", "status": "active", "tag": "min", "priority": 1,
+      "examDate": "2027-01-24", "targetDate": null, "reviewDays": 0,
+      "structure": {
+        "outer": { "name": "CH", "format": "CH{n}" },
+        "inner": { "name": "Sec", "format": "Sec{n}" },
+        "items": [
+          { "n": 3, "label": "金融資産運用", "secs": 10, "due": "2026-11-22" },
+          { "n": 4, "label": "タックスプランニング", "secs": 9, "due": "2026-12-06" },
+          { "n": 5, "label": "不動産", "secs": 6, "due": "2026-12-18" },
+          { "n": 6, "label": "相続・事業承継", "secs": 5, "due": "2027-01-03" },
+          { "n": 2, "label": "リスクマネジメント", "secs": 7, "due": "2027-01-10" },
+          { "n": 1, "label": "ライフプランニングと資金計画", "secs": 11, "due": "2027-01-19" }
+        ]
+      },
+      "est": 45, "perDayMode": "auto", "perDay": 1, "maxPerDay": 3,
+      "studyDays": "weekdays", "offDays": ["2026-12-18", "2026-12-31", "2027-01-01"],
+      "milestones": [{ "when": "afterOuter", "key": "章末問題", "title": "{name} {outer} 章末問題", "est": 75 }],
+      "doneBefore": "CH4-Sec4", "planSync": true, "startedAt": "2026-11-13"
+    },
+    {
+      "id": "e4002", "name": "ビジネス英単語4002", "status": "active", "tag": "min", "priority": 1,
+      "examDate": null, "targetDate": null,
+      "structure": {
+        "outer": { "name": "Stage", "format": "Stage {n}", "count": 40 },
+        "inner": { "name": "パート", "labels": ["前半", "後半"] }
+      },
+      "est": 30, "perDayMode": "fixed", "perDay": 1, "maxPerDay": 2,
+      "studyDays": "everyday", "offDays": [], "milestones": [],
+      "doneBefore": "Stage 12-前半", "planSync": false
+    }
+  ],
+  "links": [
+    { "match": "英語講座", "template": "eng" },
+    { "match": "金フレ＋ChatGPT", "template": "gpt", "rest": "英語：金フレ" },
+    { "match": "FP2級 学習", "subject": "fp2" }
+  ]
+}

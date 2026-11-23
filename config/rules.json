@@ -1,0 +1,42 @@
+[
+  {
+    "id": "nap_long", "scope": "day", "severity": 2,
+    "when": { "metric": "napTotalMin", "op": ">", "value": 60 },
+    "issue": "昼寝が合計{napTotalMin}分（{napCount}回）",
+    "advice": "昼寝は20分アラームで1回まで"
+  },
+  {
+    "id": "late_bed", "scope": "day", "severity": 3,
+    "when": { "metric": "bedLateMin", "op": ">=", "value": 60, "streak": 2 },
+    "issue": "就寝が目標より60分以上遅い日が{streak}日続いている",
+    "advice": "23:30に寝る準備"
+  },
+  {
+    "id": "late_wake", "scope": "day", "severity": 2,
+    "when": { "all": [
+      { "metric": "wakeHour", "op": ">=", "value": 7 },
+      { "metric": "morningTasksUntouched", "op": ">", "value": 0 }
+    ] },
+    "issue": "起床が{wakeTime}で、朝のタスク{morningTasksUntouched}件が未着手",
+    "advice": "朝タスクを午後へ移す"
+  },
+  {
+    "id": "carry3", "scope": "task", "severity": 2,
+    "when": { "metric": "carryCount", "op": ">=", "value": 3 },
+    "issue": "「{title}」が{carryCount}回繰越",
+    "advice": "やる／削る／週末に回すを決める"
+  },
+  {
+    "id": "ratio_over", "scope": "estimate", "severity": 1,
+    "when": { "metric": "actualRatio", "op": ">", "value": 1.3 },
+    "issue": "「{title}」の実績が見積の{actualRatio}倍（直近{samples}回）",
+    "advice": "次回の見積もりを自動で{newEst}分に増やします",
+    "action": { "type": "raiseEstimate" }
+  },
+  {
+    "id": "min_missing", "scope": "day", "severity": 2,
+    "when": { "metric": "minMissing", "op": ">", "value": 0 },
+    "issue": "【min】が{minMissing}件未完了",
+    "advice": "【min】は午前中か、集中しやすい午後の最初に置く"
+  }
+]
