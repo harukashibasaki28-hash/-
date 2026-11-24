@@ -63,10 +63,13 @@ export function buildDay(dk, ctx) {
         if (c) Object.assign(c, { start: p.start, fixedTime: true, slotMin: p.slotMin });
         else patch.push(p);
       };
-      if (link && (link.template || link.subject || link.rest)) {
+      if (link && (link.template || link.subject || link.subjects || link.rest)) {
         // 順番：rest（枠の残り）→ 学習科目 → 毎日のタスク
         const tpl = link.template ? dayTasks.find((x) => x.templateId === link.template && !x.done) : null;
-        const subj = link.subject ? dayTasks.filter((x) => x.subjectId === link.subject && !x.done) : [];
+        // subjects: 複数の学習科目をこの順に入れる（subject は 1 つだけのときの書き方）
+        const ids = Array.isArray(link.subjects) && link.subjects.length ? link.subjects : link.subject ? [link.subject] : [];
+        const subj = [];
+        for (const sid of ids) for (const x of dayTasks) if (x.subjectId === sid && !x.done) subj.push(x);
         if (link.rest) {
           const used = ((tpl && tpl.est) || 0) + subj.reduce((a, t) => a + (t.est || 0), 0);
           const restMin = Math.max(10, slot.min - used);

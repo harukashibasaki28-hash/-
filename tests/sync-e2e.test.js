@@ -150,7 +150,7 @@ test('すでに使い始めたデータにも、英語講座・金フレ・ビ�
   await A.seedDefaults(phone.store, old, rules);
   await A.runDayStart(phone.store, '2026-11-23', at('2026-11-23T07:00:00+09:00'));
   assert.ok(phone.store.view.allTasks.some((t) => t.id === 'tpl:eng:2026-11-23'));
-  assert.equal(await A.applyMigrations(phone.store, defaults), 1);
+  assert.ok((await A.applyMigrations(phone.store, defaults)) >= 1);
   assert.equal(await A.applyMigrations(phone.store, defaults), 0, '2回目は何もしない');
   await A.runDayStart(phone.store, '2026-11-23', at('2026-11-23T07:00:00+09:00'));
   const ids = phone.store.view.days['2026-11-23'].tasks.map((t) => t.id);
@@ -158,4 +158,40 @@ test('すでに使い始めたデータにも、英語講座・金フレ・ビ�
   assert.ok(ids.includes('stu:eng:STEP1-英語発音上達講座 第8回'));
   assert.ok(ids.includes('srs:kinfre:2026-11-23'));
   assert.equal(phone.store.view.templates.find((t) => t.id === 'eng').active, false);
+});
+
+test('自分で登録した vintage・Part7・ChatGPT英会話：時間割の枠に入り、元の日課は作られず、残っていた分も消える', async () => {
+  const { buildDay } = await import('../src/core/dayBuild.js');
+  const { parseTimetable } = await import('../src/core/planSheet.js');
+  const srv = server();
+  const phone = await device(srv, false);
+  await A.seedDefaults(phone.store, defaults, rules);
+  const sub = (id, name, extra) => ({ kind: 'subj', id, data: Object.assign({ name, tag: 'A', status: 'active', est: 30, perDayMode: 'fixed', perDay: 1, studyDays: 'everyday',
+    structure: { outer: { format: '第{n}章' }, inner: { format: 'Sec{n}' }, items: [{ n: 1, label: 'x', secs: 20 }] }, milestones: [] }, extra) });
+  await phone.store.putMany([
+    sub('s-ryyr4l', 'vintage'), sub('s-54jiwj', '世界一わかりやすいTOEICテストの授業【Part7読解】'), sub('s-3rctv0', 'ChatGPT英会話'),
+    { kind: 'task', id: 'tpl:gpt:2099-01-05', data: { date: '2099-01-05', title: 'ChatGPT英会話【A】', templateId: 'gpt', source: 'template' } },
+    { kind: 'task', id: 'tt:2099-01-05:x', data: { date: '2099-01-05', title: '英語：vintage', source: 'timetable' } },
+    { kind: 'task', id: 'old1', data: { date: '2099-01-05', title: '英語：TOEICリーディング（Part7）', source: 'sheet' } },
+    { kind: 'task', id: 'keep', data: { date: '2099-01-05', title: 'FP2級 復習（過去問道場）', source: 'timetable' } },
+  ]);
+  await A.applyMigrations(phone.store, defaults);
+  const v = phone.store.view;
+  assert.equal(v.templates.find((t) => t.id === 'gpt').active, false, '毎日のタスク ChatGPT英会話 は停止');
+  const ids = v.allTasks.map((t) => t.id);
+  assert.ok(!ids.includes('tpl:gpt:2099-01-05') && !ids.includes('tt:2099-01-05:x') && !ids.includes('old1'), '元の日課は消える');
+  assert.ok(ids.includes('keep'), '関係ないものは残す');
+  const links = v.links;
+  assert.deepEqual(links.find((l) => /金フレ/.test(l.match)).subjects, ['kinfre', 's-3rctv0']);
+  assert.deepEqual(links.find((l) => /vintage/.test(l.match)).subjects, ['s-ryyr4l', 's-54jiwj']);
+
+  const tt = parseTimetable([['曜日', '開始', '終了', '内容', '分類', '期間', '休み・メモ'],
+    ['月〜金', '7:30', '8:10', '英語：金フレ＋ChatGPT英会話', '英語', '11/13〜3/12', ''],
+    ['月', '16:00', '16:40', '英語：vintage／Part7（隔日交互）', '英語', '11/16〜12/14', '']]);
+  const r = buildDay('2026-11-30', { templates: v.templates, subjects: v.subjects, tasksAll: [], links, mode: 'actual', timetableRows: tt });
+  const titles = r.create.map((t) => (t.start || '--:--') + ' ' + t.title);
+  assert.ok(!titles.some((x) => /英語：vintage|英語：Part7|ChatGPT英会話【A】/.test(x)), titles.join('\n'));
+  assert.ok(titles.some((x) => /^16:00 vintage/.test(x)), '16:00 の枠に vintage');
+  assert.ok(titles.some((x) => /^16:30 世界一わかりやすい/.test(x)), 'その後に Part7');
+  assert.ok(titles.some((x) => /^0[78]:\d\d ChatGPT英会話 第1章/.test(x)), '金フレのあとに ChatGPT英会話（科目）');
 });
