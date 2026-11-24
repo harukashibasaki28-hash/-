@@ -12,10 +12,13 @@ const RULES = [
   { re: /4002/, carried: true, has: (t) => t.subjectId === 'e4002' },
   { re: /FP2級.*(CH|Sec|章)/, carried: true, has: (t) => t.subjectId === 'fp2' },
   { re: /日経/, carried: true, has: (t) => t.templateId === 'nikkei' },
-  { re: /ChatGPT/, carried: true, has: (t) => t.templateId === 'gpt' },
+  { re: /ChatGPT|英会話/, carried: true, has: (t) => t.templateId === 'gpt' || (t.source === 'study' && /ChatGPT|英会話/.test(t.title) && t.subjectId !== 'eng') },
   { re: /23時半に寝る|寝る準備/, carried: true, has: () => true }, // 23:30 の「寝る準備」通知に置き換え
   { re: /過去問道場/, carried: false, has: (t) => t.source === 'timetable' && /過去問道場/.test(t.title) },
-  { re: /vintage/, carried: false, has: (t) => t.source === 'timetable' && /vintage/.test(t.title) },
+  // vintage・Part7 は学習科目として登録されていれば、繰越分も含めて片付ける
+  { re: /vintage/i, carried: true, has: (t) => t.source === 'study' && /vintage/i.test(t.title) },
+  { re: /Part7|TOEICリーディング/, carried: true, has: (t) => t.source === 'study' && /Part7/.test(t.title) },
+  { re: /vintage/i, carried: false, has: (t) => t.source === 'timetable' && /vintage/i.test(t.title) },
   { re: /Part7|TOEICリーディング/, carried: false, has: (t) => t.source === 'timetable' && /Part7/.test(t.title) },
 ];
 
@@ -29,9 +32,8 @@ export function legacyDuplicates(tasks, dk) {
   for (const t of day) {
     if (!isLegacyRoutine(t) || t.done || t.runningSince || (t.sessions && t.sessions.length)) continue;
     const carried = !!(t.carriedFrom || t.carryCount);
-    const rule = RULES.find((r) => r.re.test(t.title || ''));
-    if (!rule || (carried && !rule.carried)) continue;
-    if (rule.re.source.indexOf('23時半') === 0 || mine.some(rule.has)) out.push(t.id);
+    const rules = RULES.filter((r) => r.re.test(t.title || '') && (!carried || r.carried));
+    if (rules.some((r) => r.re.source.indexOf('23時半') === 0 || mine.some(r.has))) out.push(t.id);
   }
   return out;
 }

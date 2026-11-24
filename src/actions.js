@@ -55,6 +55,42 @@ const MIGRATIONS = [
   },
 ];
 
+// 自分で登録した英語の科目（vintage・Part7・ChatGPT英会話）を時間割の枠に結び付け、元の日課を止める
+MIGRATIONS.push({
+  id: '2026-11-24-own-english-subjects',
+  run(store) {
+    const v = store.view;
+    const active = v.subjects.filter((x) => x.status !== 'finished' && x.type !== 'srs' && ['eng', 'fp2', 'e4002', 'biz'].indexOf(x.id) < 0);
+    const find = (re) => { const s = active.find((x) => re.test(x.name || '')); return s ? s.id : null; };
+    const vin = find(/vintage/i), p7 = find(/Part7|リーディング|読解/), chat = find(/ChatGPT|英会話/);
+    if (!vin && !p7 && !chat) return [];
+    const items = [];
+    if (chat) {
+      const g = store.get('tpl', 'gpt');
+      if (g && g.data.active !== false) items.push({ kind: 'tpl', id: 'gpt', data: Object.assign({}, g.data, { active: false, note: '学習科目「ChatGPT英会話」に置き換え' }) });
+    }
+    const links = (v.links || []).filter((l) => !/vintage|Part7/.test(l.match || '')).map((l) => {
+      if (chat && /金フレ/.test(l.match || '')) return { match: l.match, subject: 'kinfre', subjects: ['kinfre', chat] };
+      return l;
+    });
+    const vp = [vin, p7].filter(Boolean);
+    if (vp.length) links.push({ match: 'vintage／Part7', subject: vp[0], subjects: vp });
+    items.push({ kind: 'cfg', id: 'links', data: { value: links } });
+    // これから先の、手を付けていない元の日課を消す
+    const today = A_today(store);
+    for (const t of v.allTasks) {
+      if (t.date < today || t.done || t.runningSince || (t.sessions && t.sessions.length)) continue;
+      const isOld = (chat && t.templateId === 'gpt') ||
+        (t.source === 'timetable' && /vintage|Part7/i.test(t.title || '')) ||
+        ((t.source === 'daily' || t.source === 'sheet') && /vintage|Part7|TOEICリーディング|ChatGPT|英会話/i.test(t.title || ''));
+      if (isOld) items.push({ kind: 'task', id: t.id, data: strip(t), deleted: true });
+    }
+    return items;
+  },
+});
+
+function A_today(store) { return logicalDate(new Date(), store.view.settings.dayStartsAt); }
+
 export async function applyMigrations(store, defaults) {
   const doneRec = store.get('cfg', 'migrations');
   const done = (doneRec && doneRec.data.value) || [];
